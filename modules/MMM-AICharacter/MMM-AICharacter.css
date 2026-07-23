@@ -1,11 +1,21 @@
+/* Module-scoped: hide MagicMirror's empty header that would otherwise
+ * render the literal text "undefined" when no header is configured. */
+.module.MMM-AICharacter > .module-header {
+  display: none !important;
+}
+
+.module.MMM-AICharacter {
+  width: min(92vw, 40rem);
+  margin: 0 auto;
+}
+
 .mmm-ai-character {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.25rem;
+  gap: 1.5rem;
   width: 100%;
-  max-width: 28rem;
   margin: 0 auto;
   color: #d7f4ff;
   text-align: center;
@@ -18,27 +28,27 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 18rem;
+  min-height: min(58vh, 28rem);
 }
 
 .mmm-ai-character__canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  width: min(72vw, 14rem);
+  width: min(70vw, 22rem);
   height: auto;
-  filter: drop-shadow(0 0 18px rgba(110, 200, 255, 0.35));
+  filter: drop-shadow(0 0 22px rgba(110, 200, 255, 0.4));
   animation: mmm-ai-float 4.5s ease-in-out infinite;
 }
 
 .mmm-ai-character__name {
   position: absolute;
-  bottom: 0.25rem;
+  bottom: 0.35rem;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.85rem;
-  letter-spacing: 0.28em;
+  font-size: 0.95rem;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: rgba(168, 240, 255, 0.75);
+  color: rgba(168, 240, 255, 0.8);
   opacity: 0;
   animation: mmm-ai-fade-in 1.2s ease 0.4s forwards;
 }
@@ -46,23 +56,24 @@
 .mmm-ai-character__captions {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  width: 100%;
-  min-height: 4.5rem;
+  gap: 0.55rem;
+  width: min(100%, 34rem);
+  min-height: 5rem;
+  padding: 0 1rem;
 }
 
 .mmm-ai-character__status {
-  font-size: 0.8rem;
-  letter-spacing: 0.12em;
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(199, 125, 255, 0.9);
+  color: rgba(199, 125, 255, 0.95);
   min-height: 1.1em;
 }
 
 .mmm-ai-character__user,
 .mmm-ai-character__assistant {
-  font-size: 1.05rem;
-  line-height: 1.35;
+  font-size: 1.2rem;
+  line-height: 1.4;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
@@ -79,16 +90,16 @@
 }
 
 .mmm-ai-character--listening .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 22px rgba(168, 240, 255, 0.55));
+  filter: drop-shadow(0 0 26px rgba(168, 240, 255, 0.6));
 }
 
 .mmm-ai-character--thinking .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 22px rgba(199, 125, 255, 0.55));
+  filter: drop-shadow(0 0 26px rgba(199, 125, 255, 0.6));
   animation: mmm-ai-pulse 1.1s ease-in-out infinite;
 }
 
 .mmm-ai-character--speaking .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 28px rgba(110, 200, 255, 0.7));
+  filter: drop-shadow(0 0 32px rgba(110, 200, 255, 0.75));
 }
 
 .mmm-ai-character--error .mmm-ai-character__status {
@@ -101,7 +112,7 @@
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-6px);
+    transform: translateY(-8px);
   }
 }
 
@@ -111,7 +122,7 @@
     transform: scale(1);
   }
   50% {
-    transform: scale(1.03);
+    transform: scale(1.04);
   }
 }
 

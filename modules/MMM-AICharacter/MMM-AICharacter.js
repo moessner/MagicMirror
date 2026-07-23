@@ -15,11 +15,15 @@ Module.register("MMM-AICharacter", {
 	},
 
 	getScripts () {
-		return ["lib/character.js", "lib/conversation.js", "lib/voice.js"];
+		return [this.file("lib/character.js"), this.file("lib/conversation.js"), this.file("lib/voice.js")];
 	},
 
 	getStyles () {
 		return [this.file("MMM-AICharacter.css")];
+	},
+
+	getHeader () {
+		return "";
 	},
 
 	start () {
@@ -42,12 +46,12 @@ Module.register("MMM-AICharacter", {
 
 		const canvas = document.createElement("canvas");
 		canvas.className = "mmm-ai-character__canvas";
-		canvas.setAttribute("aria-label", `${this.config.characterName} AI character`);
+		canvas.setAttribute("aria-label", `${this.config.characterName || "Pixel"} AI character`);
 		stage.appendChild(canvas);
 
 		const name = document.createElement("div");
 		name.className = "mmm-ai-character__name";
-		name.textContent = this.config.characterName;
+		name.textContent = this.config.characterName || "Pixel";
 		stage.appendChild(name);
 
 		const captions = document.createElement("div");
@@ -55,7 +59,7 @@ Module.register("MMM-AICharacter", {
 
 		const statusEl = document.createElement("div");
 		statusEl.className = "mmm-ai-character__status";
-		statusEl.textContent = "Say \"" + this.config.wakeWord + "\"";
+		statusEl.textContent = `Say "${this.config.wakeWord || "hey mirror"}"`;
 
 		const userEl = document.createElement("div");
 		userEl.className = "mmm-ai-character__user";
@@ -70,17 +74,24 @@ Module.register("MMM-AICharacter", {
 		root.appendChild(stage);
 		root.appendChild(captions);
 
-		this.character = MMM_AICharacterLib.createPixelCharacter(canvas);
+		const lib = (typeof MMM_AICharacterLib !== "undefined" && MMM_AICharacterLib) || null;
+		if (!lib || !lib.createPixelCharacter || !lib.createConversation || !lib.createVoiceController) {
+			statusEl.textContent = "Character scripts failed to load. Check module paths.";
+			root.classList.add("mmm-ai-character--error");
+			return root;
+		}
+
+		this.character = lib.createPixelCharacter(canvas);
 		this.character.setState("idle");
 		this.character.start();
 
-		this.conversation = MMM_AICharacterLib.createConversation({
+		this.conversation = lib.createConversation({
 			userEl,
 			assistantEl,
 			statusEl
 		});
 
-		this.voice = MMM_AICharacterLib.createVoiceController({
+		this.voice = lib.createVoiceController({
 			wakeWord: this.config.wakeWord,
 			lang: this.config.voiceLang,
 			silenceMs: this.config.silenceMs,
