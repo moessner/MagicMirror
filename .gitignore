@@ -59,6 +59,7 @@ Temporary Items
 !/modules/MMM-AICharacter/
 !/modules/MMM-AICharacter/**
 /modules/MMM-AICharacter/node_modules/
+/modules/MMM-AICharacter/avatar/node_modules/
 
 # Ignore users config file but keep the samples.
 config

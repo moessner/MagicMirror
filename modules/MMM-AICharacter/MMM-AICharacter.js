@@ -12,11 +12,12 @@ Module.register("MMM-AICharacter", {
 		maxHistory: 10,
 		silenceMs: 1500,
 		postSpeakListenMs: 8000,
-		enableTTS: true
+		enableTTS: true,
+		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
 	getScripts () {
-		return [this.file("lib/character.js"), this.file("lib/conversation.js"), this.file("lib/voice.js")];
+		return [this.file("lib/conversation.js"), this.file("lib/voice.js")];
 	},
 
 	getStyles () {
@@ -30,11 +31,12 @@ Module.register("MMM-AICharacter", {
 	start () {
 		Log.info(`Starting module: ${this.name}`);
 		this.wrapper = null;
-		this.character = null;
+		this.iframe = null;
 		this.conversation = null;
 		this.voice = null;
 		this.uiState = "idle";
 		this.requestCounter = 0;
+		this.avatarReady = false;
 	},
 
 	getDom () {
@@ -43,17 +45,19 @@ Module.register("MMM-AICharacter", {
 		this.wrapper = root;
 
 		const stage = document.createElement("div");
-		stage.className = "mmm-ai-character__stage";
+		stage.className = "mmm-ai-character__stage mmm-ai-character__stage--holo";
 
-		const canvas = document.createElement("canvas");
-		canvas.className = "mmm-ai-character__canvas";
-		canvas.setAttribute("aria-label", `${this.config.characterName || "Pixel"} AI character`);
-		stage.appendChild(canvas);
-
-		const name = document.createElement("div");
-		name.className = "mmm-ai-character__name";
-		name.textContent = this.config.characterName || "Pixel";
-		stage.appendChild(name);
+		const iframe = document.createElement("iframe");
+		iframe.className = "mmm-ai-character__avatar";
+		iframe.src = this.config.avatarPath;
+		iframe.setAttribute("allow", "autoplay; microphone");
+		iframe.setAttribute("title", `${this.config.characterName || "Pixel"} holographic avatar`);
+		iframe.addEventListener("load", () => {
+			this.avatarReady = true;
+			this.postAvatar({ type: "avatar:setState", state: "idle" });
+		});
+		this.iframe = iframe;
+		stage.appendChild(iframe);
 
 		const captions = document.createElement("div");
 		captions.className = "mmm-ai-character__captions";
@@ -76,15 +80,11 @@ Module.register("MMM-AICharacter", {
 		root.appendChild(captions);
 
 		const lib = (typeof MMM_AICharacterLib !== "undefined" && MMM_AICharacterLib) || null;
-		if (!lib || !lib.createPixelCharacter || !lib.createConversation || !lib.createVoiceController) {
-			statusEl.textContent = "Character scripts failed to load. Check module paths.";
+		if (!lib || !lib.createConversation || !lib.createVoiceController) {
+			statusEl.textContent = "Voice scripts failed to load.";
 			root.classList.add("mmm-ai-character--error");
 			return root;
 		}
-
-		this.character = lib.createPixelCharacter(canvas);
-		this.character.setState("idle");
-		this.character.start();
 
 		this.conversation = lib.createConversation({
 			userEl,
@@ -133,22 +133,39 @@ Module.register("MMM-AICharacter", {
 		return root;
 	},
 
+	postAvatar (message) {
+		if (!this.iframe || !this.iframe.contentWindow) return;
+		this.iframe.contentWindow.postMessage(message, "*");
+	},
+
 	suspend () {
 		if (this.voice) this.voice.stop();
-		if (this.character) this.character.stop();
+		this.postAvatar({ type: "avatar:setState", state: "dormant" });
 	},
 
 	resume () {
-		if (this.character) this.character.start();
 		if (this.voice && this.voice.supported) this.voice.start();
+		this.postAvatar({ type: "avatar:setState", state: "idle" });
 	},
 
 	setUiState (state) {
 		this.uiState = state;
-		if (this.character) this.character.setState(state === "wake" ? "idle" : state);
 		if (this.wrapper) {
 			this.wrapper.className = `mmm-ai-character mmm-ai-character--${state === "wake" ? "idle" : state}`;
 		}
+		const avatarState =
+			state === "wake" || state === "idle"
+				? "idle"
+				: state === "listening"
+					? "listening"
+					: state === "thinking"
+						? "thinking"
+						: state === "speaking"
+							? "speaking"
+							: state === "error"
+								? "error"
+								: "idle";
+		this.postAvatar({ type: "avatar:setState", state: avatarState });
 	},
 
 	handleVoiceMode (mode) {
@@ -206,6 +223,7 @@ Module.register("MMM-AICharacter", {
 	handleBargeIn () {
 		const requestId = this.conversation.getCurrentRequestId();
 		if (this.voice) this.voice.stopSpeaking();
+		this.postAvatar({ type: "avatar:stopAudio" });
 		if (requestId) {
 			this.sendSocketNotification("AI_CHAT_CANCEL", {
 				instanceId: this.identifier,
@@ -234,6 +252,7 @@ Module.register("MMM-AICharacter", {
 			finish();
 			return;
 		}
+		this.setUiState("speaking");
 		this.voice.speak(text, finish);
 	},
 

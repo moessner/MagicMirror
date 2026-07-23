@@ -5,7 +5,7 @@
 }
 
 .module.MMM-AICharacter {
-  width: min(92vw, 40rem);
+  width: min(96vw, 48rem);
   margin: 0 auto;
 }
 
@@ -14,7 +14,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
+  gap: 1rem;
   width: 100%;
   margin: 0 auto;
   color: #d7f4ff;
@@ -28,29 +28,20 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: min(58vh, 28rem);
+  min-height: min(72vh, 36rem);
+  background: #000;
 }
 
-.mmm-ai-character__canvas {
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-  width: min(70vw, 22rem);
-  height: auto;
-  filter: drop-shadow(0 0 22px rgba(110, 200, 255, 0.4));
-  animation: mmm-ai-float 4.5s ease-in-out infinite;
+.mmm-ai-character__stage--holo {
+  min-height: min(78vh, 42rem);
 }
 
-.mmm-ai-character__name {
-  position: absolute;
-  bottom: 0.35rem;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.95rem;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: rgba(168, 240, 255, 0.8);
-  opacity: 0;
-  animation: mmm-ai-fade-in 1.2s ease 0.4s forwards;
+.mmm-ai-character__avatar {
+  width: min(92vw, 28rem);
+  height: min(78vh, 42rem);
+  border: 0;
+  background: #000;
+  display: block;
 }
 
 .mmm-ai-character__captions {
@@ -58,7 +49,7 @@
   flex-direction: column;
   gap: 0.55rem;
   width: min(100%, 34rem);
-  min-height: 5rem;
+  min-height: 4.5rem;
   padding: 0 1rem;
 }
 
@@ -72,7 +63,7 @@
 
 .mmm-ai-character__user,
 .mmm-ai-character__assistant {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   line-height: 1.4;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -89,45 +80,6 @@
   text-shadow: 0 0 12px rgba(110, 200, 255, 0.35);
 }
 
-.mmm-ai-character--listening .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 26px rgba(168, 240, 255, 0.6));
-}
-
-.mmm-ai-character--thinking .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 26px rgba(199, 125, 255, 0.6));
-  animation: mmm-ai-pulse 1.1s ease-in-out infinite;
-}
-
-.mmm-ai-character--speaking .mmm-ai-character__canvas {
-  filter: drop-shadow(0 0 32px rgba(110, 200, 255, 0.75));
-}
-
 .mmm-ai-character--error .mmm-ai-character__status {
   color: #ff8ad8;
-}
-
-@keyframes mmm-ai-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-@keyframes mmm-ai-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.04);
-  }
-}
-
-@keyframes mmm-ai-fade-in {
-  to {
-    opacity: 1;
-  }
 }

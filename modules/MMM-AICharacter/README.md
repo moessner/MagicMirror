@@ -1,16 +1,18 @@
 # MMM-AICharacter
 
-Hands-free pixelated AI companion for [MagicMirror²](https://magicmirror.builders).
+Hands-free holographic AI companion for [MagicMirror²](https://magicmirror.builders).
 
-Speak a wake word (default **hey mirror**), ask a question, and Pixel answers aloud. No buttons — designed for a mirror kiosk.
+Speak a wake word (default **hey mirror**), ask a question, and the avatar answers aloud. No buttons — designed for a mirror kiosk.
+
+The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar/) — see [`avatar/LAYER_PLAN.md`](./avatar/LAYER_PLAN.md) and [`avatar/README.md`](./avatar/README.md).
 
 ## Features
 
+- Holographic source-plate avatar with blink, hair wind, scanlines, particles, lip-sync
 - Continuous microphone listening with wake-word gating (local VAD, no buttons)
 - Server-side speech-to-text via AI Gateway (`openai/gpt-4o-mini-transcribe`)
 - Silence-based end of turn (~1.5s)
 - Barge-in while the character is speaking
-- Pixelated humanoid with idle / listening / thinking / speaking animations
 - Streaming replies via Vercel AI Gateway (`streamText`)
 
 ## Requirements
@@ -22,13 +24,19 @@ Speak a wake word (default **hey mirror**), ask a question, and Pixel answers al
 ## Install
 
 ```bash
-cd ~/MagicMirror/modules
-git clone <this-repo-path-or-copy> MMM-AICharacter
-cd MMM-AICharacter
+cd modules/MMM-AICharacter
 npm install --omit=dev
+cd avatar && npm install && npm run build
 ```
 
-When developing from this repository, the module already lives at `modules/MMM-AICharacter/`.
+## Avatar development
+
+```bash
+cd modules/MMM-AICharacter/avatar
+npm run dev
+```
+
+Open http://localhost:5173 for state buttons and test-audio lip sync.
 
 ## Configuration
 
@@ -49,7 +57,8 @@ const aiCharacterModule = {
     maxHistory: 10,
     silenceMs: 1500,
     postSpeakListenMs: 8000,
-    enableTTS: true
+    enableTTS: true,
+    avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
 ```
@@ -67,7 +76,7 @@ npm run server
 1. Module continuously listens.
 2. Say the wake word (default `hey mirror`).
 3. Ask your question; after a short silence, the turn is sent.
-4. Captions stream while Pixel speaks the reply.
+4. Captions stream while the avatar speaks the reply.
 5. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
 6. Interrupt anytime by speaking over the reply (barge-in).
 
