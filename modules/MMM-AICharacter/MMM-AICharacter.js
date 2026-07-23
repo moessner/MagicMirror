@@ -3,8 +3,8 @@
 Module.register("MMM-AICharacter", {
 	defaults: {
 		wakeWord: "hey mirror",
-		model: "google/gemini-2.5-flash",
-		transcriptionModel: "openai/gpt-4o-mini-transcribe",
+		model: "gpt-4.1-mini",
+		transcriptionModel: "gpt-4o-mini-transcribe",
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:

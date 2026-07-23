@@ -10,16 +10,16 @@ The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar
 
 - Holographic source-plate avatar with blink, hair wind, scanlines, particles, lip-sync
 - Continuous microphone listening with wake-word gating (local VAD, no buttons)
-- Server-side speech-to-text via AI Gateway (`openai/gpt-4o-mini-transcribe`)
+- Server-side speech-to-text via OpenAI (`gpt-4o-mini-transcribe`)
 - Silence-based end of turn (~1.5s)
 - Barge-in while the character is speaking
-- Streaming replies via Vercel AI Gateway (`streamText`)
+- Streaming replies via OpenAI (`gpt-4.1-mini` by default)
 
 ## Requirements
 
 - MagicMirror² with Node `>= 22.21.1`
 - Microphone permission in the browser / Electron kiosk
-- Environment variable: `AI_GATEWAY_API_KEY`
+- Environment variable: `OPENAI_API_KEY`
 
 ## Install
 
@@ -49,8 +49,8 @@ const aiCharacterModule = {
   position: "middle_center",
   config: {
     wakeWord: "hey mirror",
-    model: "google/gemini-2.5-flash",
-    transcriptionModel: "openai/gpt-4o-mini-transcribe",
+    model: "gpt-4.1-mini",
+    transcriptionModel: "gpt-4o-mini-transcribe",
     voiceLang: "en-US",
     characterName: "Pixel",
     systemPrompt: "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
@@ -63,10 +63,10 @@ const aiCharacterModule = {
 };
 ```
 
-Start MagicMirror with the gateway key available to the process:
+Start MagicMirror with the OpenAI key available to the process:
 
 ```bash
-export AI_GATEWAY_API_KEY="…"
+export OPENAI_API_KEY="…"
 npm run server
 # or Electron: npm start
 ```
@@ -82,7 +82,7 @@ npm run server
 
 ## Notes
 
-- API keys must stay in the host environment — never put `AI_GATEWAY_API_KEY` in client config.
+- API keys must stay in the host environment — never put `OPENAI_API_KEY` in client config.
 - Speech recognition does **not** use the browser Web Speech API (that often fails with `network` errors). Audio is captured locally and transcribed on the server.
 - Allow microphone access for the MagicMirror page / Electron kiosk.
 - Server mode (`npm run server`) needs a browser that can access the mic on the page origin (HTTPS or localhost).

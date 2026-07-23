@@ -1,6 +1,9 @@
 const NodeHelper = require("node_helper");
 const Log = require("logger");
 
+const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
+const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+
 module.exports = NodeHelper.create({
 	start () {
 		this.instances = new Map();
@@ -19,13 +22,17 @@ module.exports = NodeHelper.create({
 		this.activeRequests.clear();
 	},
 
+	requireOpenAiKey () {
+		return Boolean(process.env.OPENAI_API_KEY);
+	},
+
 	socketNotificationReceived (notification, payload) {
 		if (!payload) return;
 
 		if (notification === "AI_CONFIG") {
 			this.instances.set(payload.instanceId, {
-				model: payload.model || "google/gemini-2.5-flash",
-				transcriptionModel: payload.transcriptionModel || "openai/gpt-4o-mini-transcribe",
+				model: payload.model || DEFAULT_CHAT_MODEL,
+				transcriptionModel: payload.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL,
 				systemPrompt: payload.systemPrompt,
 				maxHistory: payload.maxHistory || 10,
 				characterName: payload.characterName || "Pixel",
@@ -78,12 +85,12 @@ module.exports = NodeHelper.create({
 		const { instanceId, requestId, audioBase64, mimeType } = payload;
 		const settings = this.instances.get(instanceId) || {};
 
-		if (!process.env.AI_GATEWAY_API_KEY) {
+		if (!this.requireOpenAiKey()) {
 			this.sendSocketNotification("AI_STT_RESULT", {
 				instanceId,
 				requestId,
 				error: true,
-				message: "Missing AI_GATEWAY_API_KEY in the MagicMirror process environment."
+				message: "Missing OPENAI_API_KEY in the MagicMirror process environment."
 			});
 			return;
 		}
@@ -98,12 +105,13 @@ module.exports = NodeHelper.create({
 			return;
 		}
 
-		const { transcribe, gateway } = await import("ai");
+		const { transcribe } = await import("ai");
+		const { openai } = await import("@ai-sdk/openai");
 		const audio = Buffer.from(audioBase64, "base64");
-		const modelId = settings.transcriptionModel || "openai/gpt-4o-mini-transcribe";
+		const modelId = settings.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL;
 
 		const transcript = await transcribe({
-			model: gateway.transcription(modelId),
+			model: openai.transcription(modelId),
 			audio,
 			providerOptions: {
 				openai: {
@@ -123,16 +131,16 @@ module.exports = NodeHelper.create({
 	async handleChatSend (payload) {
 		const { instanceId, requestId, messages } = payload;
 		const settings = this.instances.get(instanceId) || {
-			model: "google/gemini-2.5-flash",
+			model: DEFAULT_CHAT_MODEL,
 			systemPrompt: "You are a concise AI mirror companion.",
 			maxHistory: 10
 		};
 
-		if (!process.env.AI_GATEWAY_API_KEY) {
+		if (!this.requireOpenAiKey()) {
 			this.sendSocketNotification("AI_CHAT_ERROR", {
 				instanceId,
 				requestId,
-				message: "Missing AI_GATEWAY_API_KEY in the MagicMirror process environment."
+				message: "Missing OPENAI_API_KEY in the MagicMirror process environment."
 			});
 			return;
 		}
@@ -144,6 +152,7 @@ module.exports = NodeHelper.create({
 		this.activeRequests.set(key, controller);
 
 		const { streamText } = await import("ai");
+		const { openai } = await import("@ai-sdk/openai");
 
 		const safeMessages = Array.isArray(messages)
 			? messages
@@ -153,7 +162,7 @@ module.exports = NodeHelper.create({
 
 		try {
 			const result = streamText({
-				model: settings.model,
+				model: openai(settings.model || DEFAULT_CHAT_MODEL),
 				system: settings.systemPrompt,
 				messages: safeMessages,
 				abortSignal: controller.signal
