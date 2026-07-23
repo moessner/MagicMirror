@@ -9,6 +9,14 @@
   margin: 0 auto;
 }
 
+/*
+ * bottom_bar (e.g. newsfeed) is painted after middle_center in the MM DOM.
+ * Raise this region while the weather card is open so the card isn't covered.
+ */
+.region.middle.center:has(.mmm-ai-character--weather) {
+  z-index: 40;
+}
+
 .mmm-ai-character {
   display: flex;
   flex-direction: column;
@@ -105,12 +113,30 @@
   color: #ff8ad8;
 }
 
+/* Keep avatar + captions + card above the bottom news bar. */
+.mmm-ai-character--weather .mmm-ai-character__stage--holo {
+  min-height: min(30vh, 15rem);
+}
+
+.mmm-ai-character--weather .mmm-ai-character__avatar {
+  width: min(52vw, 16rem);
+  height: min(30vh, 15rem);
+}
+
+.mmm-ai-character--weather .mmm-ai-character__captions {
+  min-height: 0;
+  padding-bottom: 0.25rem;
+}
+
 .mmm-ai-character__weather {
+  position: relative;
+  z-index: 1;
   margin-top: 0.35rem;
-  padding: 0.85rem 1rem 0.95rem;
+  margin-bottom: 0.35rem;
+  padding: 0.75rem 0.9rem 0.85rem;
   border: 1px solid rgba(120, 200, 255, 0.28);
   border-radius: 0.85rem;
-  background: linear-gradient(160deg, rgba(12, 36, 58, 0.72), rgba(8, 18, 32, 0.55));
+  background: linear-gradient(160deg, rgba(8, 28, 48, 0.94), rgba(4, 12, 24, 0.92));
   box-shadow: 0 0 24px rgba(80, 180, 255, 0.12);
   animation: mmm-ai-weather-in 0.45s ease;
 }

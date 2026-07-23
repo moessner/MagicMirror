@@ -273,6 +273,7 @@ Module.register("MMM-AICharacter", {
 		if (!this.weatherEl) return;
 		this.weatherEl.hidden = true;
 		this.weatherEl.innerHTML = "";
+		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--weather");
 	},
 
 	formatDayLabel (dateStr) {
@@ -324,6 +325,7 @@ Module.register("MMM-AICharacter", {
 			<div class="mmm-ai-character__weather-days">${days}</div>
 		`;
 		this.weatherEl.hidden = false;
+		if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--weather");
 	},
 
 	resolveWeatherLocation (locationHint) {
