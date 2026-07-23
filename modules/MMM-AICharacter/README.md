@@ -2,7 +2,7 @@
 
 Hands-free holographic AI companion for [MagicMirror²](https://magicmirror.builders).
 
-Speak a wake word (default **hey mirror**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
+Speak a configurable wake word (default **alexa**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
 
 The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar/) — see [`avatar/LAYER_PLAN.md`](./avatar/LAYER_PLAN.md) and [`avatar/README.md`](./avatar/README.md).
 
@@ -49,8 +49,8 @@ const aiCharacterModule = {
   module: "MMM-AICharacter",
   position: "middle_center",
   config: {
-    wakeWord: "hey mirror", // set "" for always-open live mode
-    wakeAliases: [], // optional extra phrases accepted as wake
+    wakeWord: "alexa", // any phrase; set "" for always-open live mode
+    wakeAliases: ["hey pixel"], // optional extra phrases accepted as wake
     realtimeModel: "gpt-realtime",
     voice: "sage",
     transcriptionModel: "gpt-4o-mini-transcribe",
@@ -67,7 +67,7 @@ const aiCharacterModule = {
 
 | Option | Default | Notes |
 |--------|---------|--------|
-| `wakeWord` | `"hey mirror"` | Empty string disables wake gating (always live) |
+| `wakeWord` | `"alexa"` | Any phrase; empty string disables wake gating (always live) |
 | `wakeAliases` | `[]` | Extra accepted phrases; built-in fuzzy aliases also cover common STT mishears |
 | `realtimeModel` | `"gpt-realtime"` | OpenAI Realtime speech-to-speech model |
 | `voice` | `"sage"` | Realtime output voice (`sage`, `marin`, `cedar`, etc.) |
@@ -87,7 +87,7 @@ npm run server
 ## Hands-free flow
 
 1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake).
-2. Say the wake word (default `hey mirror`).
+2. Say the wake word (default `alexa`, configurable via `wakeWord`).
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
 5. For ~8s after a reply, you can ask a follow-up without repeating the wake word.

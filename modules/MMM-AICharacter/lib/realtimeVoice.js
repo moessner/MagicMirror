@@ -44,6 +44,18 @@
 
 	function defaultWakeAliases (wakeWord) {
 		const w = normalize(wakeWord);
+		if (w === "alexa") {
+			return [
+				"alexa",
+				"alexia",
+				"alex ah",
+				"a lexa",
+				"alex er",
+				"alexa alexa",
+				"hey alexa",
+				"ok alexa"
+			];
+		}
 		if (w === "hey mirror") {
 			return [
 				"hey mirror",
@@ -221,7 +233,7 @@
 		let userBuffer = "";
 
 		const mimeType = pickMimeType();
-		// Slightly more sensitive mic gate — quiet "hey mirror" was often missed.
+		// Slightly more sensitive mic gate — quiet wake words were often missed.
 		const vadThreshold = typeof config.vadThreshold === "number" ? config.vadThreshold : 0.015;
 		const wakeSilenceMs = typeof config.wakeSilenceMs === "number" ? config.wakeSilenceMs : 550;
 		const minSpeechMs = 220;
