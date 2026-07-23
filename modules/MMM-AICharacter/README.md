@@ -77,6 +77,23 @@ const aiCharacterModule = {
 | `wakeSilenceMs` | `550` | End-of-clip silence for wake-word detection only |
 | `vadThreshold` | `0.015` | Local mic loudness gate for starting a wake clip |
 | `appearOnWake` | `true` | Materialize on wake, dematerialize when the follow-up window ends |
+| `showCost` | `true` | Show estimated OpenAI spend from Realtime `usage` events |
+| `costCurrencyLabel` | `"$"` | Prefix for the cost line (OpenAI bills in USD) |
+| `realtimeRates` | list prices | Optional USD-per-1M-token overrides for `gpt-realtime` |
+| `transcriptionRates` | list prices | Optional overrides for input transcription usage |
+
+### Cost display
+
+When `showCost` is enabled, the module accumulates token usage from:
+
+- `response.done` (speech-to-speech turns)
+- `conversation.item.input_audio_transcription.completed` (Realtime input captions)
+
+and estimates USD with the published `gpt-realtime` rate card (audio/text in/out + cached input). The line looks like:
+
+`Kosten $0.042 · letzte Antwort $0.008`
+
+Wake-word STT outside Realtime is not included. Totals reset when MagicMirror reloads. Rates can drift from OpenAI’s current list — override via `realtimeRates` / `transcriptionRates` if needed.
 
 Start MagicMirror with the OpenAI key available to the process:
 

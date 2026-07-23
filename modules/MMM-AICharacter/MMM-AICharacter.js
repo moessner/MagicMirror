@@ -16,11 +16,21 @@ Module.register("MMM-AICharacter", {
 		vadThreshold: 0.015,
 		/** When true (and wakeWord is set), avatar stays invisible until wake, then dematerializes after the session. */
 		appearOnWake: true,
-		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
+		avatarPath: "/MMM-AICharacter/avatar-app/embed.html",
+		/** Show estimated OpenAI spend from Realtime usage events. */
+		showCost: true,
+		costCurrencyLabel: "$",
+		/** Optional overrides: USD per 1M tokens (see README). */
+		realtimeRates: null,
+		transcriptionRates: null
 	},
 
 	getScripts () {
-		return [this.file("lib/conversation.js"), this.file("lib/realtimeVoice.js")];
+		return [
+			this.file("lib/conversation.js"),
+			this.file("lib/costTracker.js"),
+			this.file("lib/realtimeVoice.js")
+		];
 	},
 
 	getStyles () {
@@ -45,6 +55,8 @@ Module.register("MMM-AICharacter", {
 		this.pendingRemoteStream = null;
 		this.avatarStreamRetries = 0;
 		this.pendingTokenRequestId = null;
+		this.costTracker = null;
+		this.costEl = null;
 	},
 
 	getDom () {
@@ -86,9 +98,16 @@ Module.register("MMM-AICharacter", {
 		const assistantEl = document.createElement("div");
 		assistantEl.className = "mmm-ai-character__assistant";
 
+		const costEl = document.createElement("div");
+		costEl.className = "mmm-ai-character__cost";
+		costEl.hidden = this.config.showCost === false;
+		costEl.textContent = this.config.showCost === false ? "" : "Kosten $0.000";
+		this.costEl = costEl;
+
 		captions.appendChild(statusEl);
 		captions.appendChild(userEl);
 		captions.appendChild(assistantEl);
+		captions.appendChild(costEl);
 
 		root.appendChild(stage);
 		root.appendChild(captions);
@@ -105,6 +124,17 @@ Module.register("MMM-AICharacter", {
 			assistantEl,
 			statusEl
 		});
+
+		if (lib.createCostTracker && this.config.showCost !== false) {
+			this.costTracker = lib.createCostTracker({
+				currencyLabel: this.config.costCurrencyLabel || "$",
+				realtimeRates: this.config.realtimeRates || undefined,
+				transcriptionRates: this.config.transcriptionRates || undefined,
+				onUpdate: (snap) => {
+					if (this.costEl) this.costEl.textContent = snap.label;
+				}
+			});
+		}
 
 		this.voice = lib.createRealtimeVoiceController({
 			wakeWord: this.config.wakeWord,
@@ -138,7 +168,10 @@ Module.register("MMM-AICharacter", {
 				this.setUiState("speaking");
 			},
 			onRemoteStream: (stream) => this.attachAvatarStream(stream),
-			onError: (message) => this.handleVoiceError(message)
+			onError: (message) => this.handleVoiceError(message),
+			onUsage: (usage, kind) => {
+				if (this.costTracker) this.costTracker.addUsage(usage, kind || "realtime");
+			}
 		});
 
 		if (!this.voice.supported) {
