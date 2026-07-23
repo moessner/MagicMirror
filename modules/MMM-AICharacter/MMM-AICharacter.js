@@ -253,11 +253,6 @@ Module.register("MMM-AICharacter", {
 			return;
 		}
 
-		if (notification === "AI_CONFIG_OK") {
-			const prompt = this.config.wakeWord
-				? `Say "${this.config.wakeWord}"`
-				: "Live voice ready";
-			if (this.conversation) this.conversation.setStatus(prompt);
-		}
+		// AI_CONFIG_OK: voice controller owns status text after connect/error.
 	}
 });
