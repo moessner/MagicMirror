@@ -192,7 +192,6 @@
 	 * @param {function} config.onAssistantDelta - (delta) => void
 	 * @param {function} config.onRemoteStream - (MediaStream|null) => void
 	 * @param {function} config.onError - (message) => void
-	 * @param {function} [config.onUsage] - (usage, kind) => void
 	 */
 	function createRealtimeVoiceController (config) {
 		const supported = Boolean(
@@ -452,9 +451,6 @@
 				case "conversation.item.input_audio_transcription.completed":
 					userBuffer = event.transcript || userBuffer;
 					if (typeof config.onUserCaption === "function") config.onUserCaption(userBuffer);
-					if (event.usage && typeof config.onUsage === "function") {
-						config.onUsage(event.usage, "transcription");
-					}
 					break;
 				case "response.created":
 					assistantBuffer = "";
@@ -482,20 +478,11 @@
 					setStatus(`${config.characterName || "Pixel"} is speaking…`);
 					break;
 				case "output_audio_buffer.stopped":
+				case "response.done":
 					setMode("listening");
 					setStatus("Listening…");
 					scheduleRemute();
 					break;
-				case "response.done": {
-					const usage = event.response && event.response.usage;
-					if (usage && typeof config.onUsage === "function") {
-						config.onUsage(usage, "realtime");
-					}
-					setMode("listening");
-					setStatus("Listening…");
-					scheduleRemute();
-					break;
-				}
 				case "error":
 					config.onError(event.error?.message || event.message || "Realtime session error");
 					break;

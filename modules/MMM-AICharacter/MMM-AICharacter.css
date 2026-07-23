@@ -55,11 +55,6 @@
   display: none;
 }
 
-/* Cost line stays visible even while the hologram is dormant. */
-.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__cost {
-  display: block;
-}
-
 .mmm-ai-character__avatar {
   width: min(70vw, 22rem);
   height: min(46vh, 24rem);
@@ -107,13 +102,4 @@
 
 .mmm-ai-character--error .mmm-ai-character__status {
   color: #ff8ad8;
-}
-
-.mmm-ai-character__cost {
-  margin-top: 0.35rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(215, 244, 255, 0.45);
-  min-height: 1em;
 }
