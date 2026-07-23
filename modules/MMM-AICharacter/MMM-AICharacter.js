@@ -4,6 +4,7 @@ Module.register("MMM-AICharacter", {
 	defaults: {
 		wakeWord: "hey mirror",
 		model: "google/gemini-2.5-flash",
+		transcriptionModel: "openai/gpt-4o-mini-transcribe",
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
@@ -100,12 +101,20 @@ Module.register("MMM-AICharacter", {
 			onPartial: (text, mode) => this.handlePartial(text, mode),
 			onUtterance: (text) => this.handleUtterance(text),
 			onBargeIn: () => this.handleBargeIn(),
-			onError: (message) => this.handleVoiceError(message)
+			onError: (message) => this.handleVoiceError(message),
+			onTranscribeRequest: (audioPayload) => {
+				this.sendSocketNotification("AI_STT_TRANSCRIBE", {
+					instanceId: this.identifier,
+					requestId: audioPayload.requestId,
+					audioBase64: audioPayload.audioBase64,
+					mimeType: audioPayload.mimeType
+				});
+			}
 		});
 
 		if (!this.voice.supported) {
 			this.setUiState("error");
-			this.conversation.setStatus("Speech recognition unavailable");
+			this.conversation.setStatus("Microphone unavailable in this browser");
 		} else {
 			this.voice.start();
 			this.conversation.setStatus(`Say "${this.config.wakeWord}"`);
@@ -114,9 +123,11 @@ Module.register("MMM-AICharacter", {
 		this.sendSocketNotification("AI_CONFIG", {
 			instanceId: this.identifier,
 			model: this.config.model,
+			transcriptionModel: this.config.transcriptionModel,
 			systemPrompt: this.config.systemPrompt,
 			maxHistory: this.config.maxHistory,
-			characterName: this.config.characterName
+			characterName: this.config.characterName,
+			voiceLang: this.config.voiceLang
 		});
 
 		return root;
@@ -159,8 +170,18 @@ Module.register("MMM-AICharacter", {
 	},
 
 	handlePartial (text, mode) {
-		if (mode === "listening" && text && text !== "Listening…") {
+		if (!text) return;
+		if (text === "Transcribing…" || text === "Heard you…" || text === "Listening…") {
+			this.conversation.setStatus(text);
+			return;
+		}
+		if (mode === "listening") {
 			this.conversation.setUserCaption(text);
+			this.conversation.setStatus("Listening…");
+			return;
+		}
+		if (mode === "wake") {
+			this.conversation.setStatus(text);
 		}
 	},
 
@@ -218,6 +239,11 @@ Module.register("MMM-AICharacter", {
 
 	socketNotificationReceived (notification, payload) {
 		if (!payload || payload.instanceId !== this.identifier) return;
+
+		if (notification === "AI_STT_RESULT") {
+			if (this.voice) this.voice.handleSttResult(payload);
+			return;
+		}
 
 		if (notification === "AI_CHAT_DELTA") {
 			if (!this.conversation.isCurrent(payload.requestId)) return;

@@ -25,9 +25,11 @@ module.exports = NodeHelper.create({
 		if (notification === "AI_CONFIG") {
 			this.instances.set(payload.instanceId, {
 				model: payload.model || "google/gemini-2.5-flash",
+				transcriptionModel: payload.transcriptionModel || "openai/gpt-4o-mini-transcribe",
 				systemPrompt: payload.systemPrompt,
 				maxHistory: payload.maxHistory || 10,
-				characterName: payload.characterName || "Pixel"
+				characterName: payload.characterName || "Pixel",
+				voiceLang: payload.voiceLang || "en"
 			});
 			this.sendSocketNotification("AI_CONFIG_OK", { instanceId: payload.instanceId });
 			return;
@@ -35,6 +37,19 @@ module.exports = NodeHelper.create({
 
 		if (notification === "AI_CHAT_CANCEL") {
 			this.cancelRequest(payload.instanceId, payload.requestId);
+			return;
+		}
+
+		if (notification === "AI_STT_TRANSCRIBE") {
+			this.handleTranscribe(payload).catch((error) => {
+				Log.error(`${this.name} STT error: ${error.message}`);
+				this.sendSocketNotification("AI_STT_RESULT", {
+					instanceId: payload.instanceId,
+					requestId: payload.requestId,
+					error: true,
+					message: error.message || "Transcription failed"
+				});
+			});
 			return;
 		}
 
@@ -57,6 +72,52 @@ module.exports = NodeHelper.create({
 			controller.abort();
 			this.activeRequests.delete(key);
 		}
+	},
+
+	async handleTranscribe (payload) {
+		const { instanceId, requestId, audioBase64, mimeType } = payload;
+		const settings = this.instances.get(instanceId) || {};
+
+		if (!process.env.AI_GATEWAY_API_KEY) {
+			this.sendSocketNotification("AI_STT_RESULT", {
+				instanceId,
+				requestId,
+				error: true,
+				message: "Missing AI_GATEWAY_API_KEY in the MagicMirror process environment."
+			});
+			return;
+		}
+
+		if (!audioBase64) {
+			this.sendSocketNotification("AI_STT_RESULT", {
+				instanceId,
+				requestId,
+				error: true,
+				message: "No audio received for transcription."
+			});
+			return;
+		}
+
+		const { transcribe, gateway } = await import("ai");
+		const audio = Buffer.from(audioBase64, "base64");
+		const modelId = settings.transcriptionModel || "openai/gpt-4o-mini-transcribe";
+
+		const transcript = await transcribe({
+			model: gateway.transcription(modelId),
+			audio,
+			providerOptions: {
+				openai: {
+					language: (settings.voiceLang || "en").slice(0, 2)
+				}
+			}
+		});
+
+		this.sendSocketNotification("AI_STT_RESULT", {
+			instanceId,
+			requestId,
+			text: transcript.text || "",
+			mimeType: mimeType || "audio/webm"
+		});
 	},
 
 	async handleChatSend (payload) {

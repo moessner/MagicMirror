@@ -6,7 +6,8 @@ Speak a wake word (default **hey mirror**), ask a question, and Pixel answers al
 
 ## Features
 
-- Continuous microphone listening with wake-word gating
+- Continuous microphone listening with wake-word gating (local VAD, no buttons)
+- Server-side speech-to-text via AI Gateway (`openai/gpt-4o-mini-transcribe`)
 - Silence-based end of turn (~1.5s)
 - Barge-in while the character is speaking
 - Pixelated humanoid with idle / listening / thinking / speaking animations
@@ -41,6 +42,7 @@ const aiCharacterModule = {
   config: {
     wakeWord: "hey mirror",
     model: "google/gemini-2.5-flash",
+    transcriptionModel: "openai/gpt-4o-mini-transcribe",
     voiceLang: "en-US",
     characterName: "Pixel",
     systemPrompt: "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
@@ -72,5 +74,6 @@ npm run server
 ## Notes
 
 - API keys must stay in the host environment — never put `AI_GATEWAY_API_KEY` in client config.
-- Web Speech API support varies; Chromium / Electron works best.
-- Server mode (`npm run server`) needs a browser that can access the mic on the page origin.
+- Speech recognition does **not** use the browser Web Speech API (that often fails with `network` errors). Audio is captured locally and transcribed on the server.
+- Allow microphone access for the MagicMirror page / Electron kiosk.
+- Server mode (`npm run server`) needs a browser that can access the mic on the page origin (HTTPS or localhost).

@@ -1,13 +1,13 @@
-/* global window, speechSynthesis, SpeechSynthesisUtterance */
+/* global window, navigator, MediaRecorder, Blob, FileReader, speechSynthesis, SpeechSynthesisUtterance */
 /**
- * Hands-free voice I/O for MMM-AICharacter:
- * continuous recognition, wake word, silence end-of-turn, barge-in, TTS.
+ * Hands-free voice I/O for MMM-AICharacter.
+ * Uses microphone + VAD locally, and server-side STT (AI Gateway) for transcripts.
+ * Browser Web Speech API is intentionally avoided (network errors on many hosts).
  */
 (function (global) {
 	"use strict";
 
 	/**
-	 * Normalize text for wake-word matching.
 	 * @param {string} text
 	 * @returns {string}
 	 */
@@ -30,8 +30,38 @@
 		if (!w) return { matched: true, remainder: t };
 		const idx = t.indexOf(w);
 		if (idx === -1) return { matched: false, remainder: "" };
-		const remainder = t.slice(idx + w.length).trim();
-		return { matched: true, remainder };
+		return { matched: true, remainder: t.slice(idx + w.length).trim() };
+	}
+
+	/**
+	 * @param {Blob} blob
+	 * @returns {Promise<string>}
+	 */
+	function blobToBase64 (blob) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				const result = String(reader.result || "");
+				const comma = result.indexOf(",");
+				resolve(comma >= 0 ? result.slice(comma + 1) : result);
+			};
+			reader.onerror = () => reject(reader.error || new Error("Failed to read audio"));
+			reader.readAsDataURL(blob);
+		});
+	}
+
+	/**
+	 * Pick a MediaRecorder mime type supported by this browser.
+	 * @returns {string}
+	 */
+	function pickMimeType () {
+		const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+		for (const type of candidates) {
+			if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
+				return type;
+			}
+		}
+		return "";
 	}
 
 	/**
@@ -40,169 +70,295 @@
 	 * @param {string} config.lang
 	 * @param {number} config.silenceMs
 	 * @param {number} config.postSpeakListenMs
-	 * @param {function} config.onState - (state) => void
-	 * @param {function} config.onPartial - (text, mode) => void
-	 * @param {function} config.onUtterance - (text) => void
-	 * @param {function} config.onBargeIn - () => void
-	 * @param {function} config.onError - (message) => void
+	 * @param {number} [config.vadThreshold]
+	 * @param {function} config.onState
+	 * @param {function} config.onPartial
+	 * @param {function} config.onUtterance
+	 * @param {function} config.onBargeIn
+	 * @param {function} config.onError
+	 * @param {function} config.onTranscribeRequest - ({requestId, audioBase64, mimeType}) => void
 	 * @returns {object}
 	 */
 	function createVoiceController (config) {
-		const SpeechRecognition = global.SpeechRecognition || global.webkitSpeechRecognition;
-		let recognition = null;
-		let mode = "wake"; // wake | listening | speaking
+		const supported = Boolean(global.navigator && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && global.MediaRecorder);
+
+		let mode = "wake";
 		let armedUntil = 0;
-		let silenceTimer = null;
-		let pendingTranscript = "";
-		let restartTimer = null;
 		let active = false;
 		let speaking = false;
-
-		function clearSilenceTimer () {
-			if (silenceTimer) {
-				global.clearTimeout(silenceTimer);
-				silenceTimer = null;
-			}
-		}
-
-		function scheduleSilenceCommit () {
-			clearSilenceTimer();
-			silenceTimer = global.setTimeout(() => {
-				const text = pendingTranscript.trim();
-				pendingTranscript = "";
-				if (!text) {
-					setMode("wake");
-					return;
-				}
-				setMode("wake");
-				config.onUtterance(text);
-			}, config.silenceMs || 1500);
-		}
+		let stream = null;
+		let audioContext = null;
+		let analyser = null;
+		let vadTimer = null;
+		let mediaRecorder = null;
+		let recordChunks = [];
+		let recording = false;
+		let speechStartedAt = 0;
+		let lastLoudAt = 0;
+		let pendingTranscript = "";
+		let sttInFlight = false;
+		let sttRequestId = 0;
+		const mimeType = pickMimeType();
+		const vadThreshold = typeof config.vadThreshold === "number" ? config.vadThreshold : 0.025;
+		const minSpeechMs = 350;
+		const maxUtteranceMs = 15000;
 
 		function setMode (next) {
 			mode = next;
-			if (typeof config.onState === "function") {
-				config.onState(next);
+			if (typeof config.onState === "function") config.onState(next);
+		}
+
+		function clearVad () {
+			if (vadTimer) {
+				global.clearInterval(vadTimer);
+				vadTimer = null;
 			}
 		}
 
-		function ensureRecognition () {
-			if (!SpeechRecognition) {
-				config.onError("Speech recognition is not supported in this browser.");
-				return null;
+		function rmsLevel () {
+			if (!analyser) return 0;
+			const data = new Uint8Array(analyser.fftSize);
+			analyser.getByteTimeDomainData(data);
+			let sum = 0;
+			for (let i = 0; i < data.length; i++) {
+				const v = (data[i] - 128) / 128;
+				sum += v * v;
 			}
-			if (recognition) return recognition;
-
-			recognition = new SpeechRecognition();
-			recognition.continuous = true;
-			recognition.interimResults = true;
-			recognition.lang = config.lang || "en-US";
-			recognition.maxAlternatives = 1;
-
-			recognition.onresult = (event) => {
-				let interim = "";
-				let finalChunk = "";
-				for (let i = event.resultIndex; i < event.results.length; i++) {
-					const result = event.results[i];
-					const text = result[0].transcript;
-					if (result.isFinal) finalChunk += text;
-					else interim += text;
-				}
-
-				const combined = `${pendingTranscript} ${finalChunk} ${interim}`.trim();
-
-				if (speaking || mode === "speaking") {
-					if (normalize(finalChunk) || normalize(interim).length > 2) {
-						speaking = false;
-						config.onBargeIn();
-						armedUntil = Date.now() + (config.postSpeakListenMs || 8000);
-						setMode("listening");
-						pendingTranscript = normalize(finalChunk || interim);
-						config.onPartial(pendingTranscript, "listening");
-						if (finalChunk) scheduleSilenceCommit();
-					}
-					return;
-				}
-
-				if (mode === "wake") {
-					const openMic = Date.now() < armedUntil;
-					const wake = matchWakeWord(combined, config.wakeWord || "hey mirror");
-					if (openMic || wake.matched) {
-						setMode("listening");
-						pendingTranscript = openMic && !wake.matched ? normalize(combined) : wake.remainder;
-						config.onPartial(pendingTranscript || "Listening…", "listening");
-						if (finalChunk && pendingTranscript) scheduleSilenceCommit();
-					}
-					return;
-				}
-
-				// listening
-				if (finalChunk) {
-					pendingTranscript = `${pendingTranscript} ${finalChunk}`.trim();
-				}
-				config.onPartial((pendingTranscript || interim).trim(), "listening");
-				if (finalChunk || interim) scheduleSilenceCommit();
-			};
-
-			recognition.onerror = (event) => {
-				if (event.error === "no-speech" || event.error === "aborted") return;
-				if (event.error === "not-allowed") {
-					config.onError("Microphone permission denied. Allow mic access for hands-free talk.");
-					return;
-				}
-				config.onError(`Speech error: ${event.error}`);
-			};
-
-			recognition.onend = () => {
-				if (!active) return;
-				restartTimer = global.setTimeout(() => {
-					tryStart();
-				}, 250);
-			};
-
-			return recognition;
+			return Math.sqrt(sum / data.length);
 		}
 
-		function tryStart () {
-			if (!active) return;
-			const rec = ensureRecognition();
-			if (!rec) return;
+		function beginRecording () {
+			if (!stream || recording || sttInFlight) return;
 			try {
-				rec.start();
-			} catch {
-				// Already started
+				recordChunks = [];
+				mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+				mediaRecorder.ondataavailable = (event) => {
+					if (event.data && event.data.size > 0) recordChunks.push(event.data);
+				};
+				mediaRecorder.onerror = () => {
+					config.onError("Microphone recording failed.");
+				};
+				mediaRecorder.start(250);
+				recording = true;
+				speechStartedAt = Date.now();
+				lastLoudAt = Date.now();
+			} catch (error) {
+				config.onError(error.message || "Could not start recording.");
 			}
 		}
 
-		function start () {
+		async function finishRecording () {
+			if (!recording || !mediaRecorder) return;
+			recording = false;
+
+			const recorder = mediaRecorder;
+			mediaRecorder = null;
+
+			const blob = await new Promise((resolve) => {
+				recorder.onstop = () => {
+					resolve(new Blob(recordChunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
+				};
+				try {
+					recorder.stop();
+				} catch {
+					resolve(new Blob([]));
+				}
+			});
+
+			recordChunks = [];
+			if (!active || !blob || blob.size < 1200) return;
+
+			sttInFlight = true;
+			sttRequestId += 1;
+			const requestId = `stt-${sttRequestId}-${Date.now()}`;
+			config.onPartial("Transcribing…", mode === "speaking" ? "listening" : mode);
+
+			try {
+				const audioBase64 = await blobToBase64(blob);
+				config.onTranscribeRequest({
+					requestId,
+					audioBase64,
+					mimeType: blob.type || mimeType || "audio/webm"
+				});
+			} catch (error) {
+				sttInFlight = false;
+				config.onError(error.message || "Failed to encode audio.");
+			}
+		}
+
+		function handleTranscript (text, requestId) {
+			sttInFlight = false;
+			const cleaned = normalize(text);
+			if (!cleaned) {
+				if (mode === "listening" && !pendingTranscript) {
+					config.onPartial("Listening…", "listening");
+				}
+				return;
+			}
+
+			if (speaking || mode === "speaking") {
+				speaking = false;
+				config.onBargeIn();
+				armedUntil = Date.now() + (config.postSpeakListenMs || 8000);
+				setMode("listening");
+				pendingTranscript = cleaned;
+				config.onPartial(pendingTranscript, "listening");
+				maybeCommitListening(true);
+				return;
+			}
+
+			if (mode === "wake") {
+				const openMic = Date.now() < armedUntil;
+				const wake = matchWakeWord(cleaned, config.wakeWord || "hey mirror");
+				if (!openMic && !wake.matched) {
+					config.onPartial(`Say "${config.wakeWord || "hey mirror"}"`, "wake");
+					return;
+				}
+				setMode("listening");
+				pendingTranscript = openMic && !wake.matched ? cleaned : wake.remainder;
+				if (pendingTranscript) {
+					config.onPartial(pendingTranscript, "listening");
+					maybeCommitListening(true);
+				} else {
+					config.onPartial("Listening…", "listening");
+				}
+				return;
+			}
+
+			// listening — append continuation phrases
+			pendingTranscript = `${pendingTranscript} ${cleaned}`.trim();
+			config.onPartial(pendingTranscript, "listening");
+			maybeCommitListening(false);
+		}
+
+		function maybeCommitListening (force) {
+			if (!pendingTranscript) return;
+			if (!force && Date.now() < armedUntil) {
+				// still gathering follow-up; wait for next silence-ended clip unless forced
+			}
+			const text = pendingTranscript.trim();
+			pendingTranscript = "";
+			setMode("wake");
+			config.onUtterance(text);
+		}
+
+		/**
+		 * Called by module when server returns STT result.
+		 * @param {{requestId:string, text?:string, message?:string, error?:boolean}} payload
+		 */
+		function handleSttResult (payload) {
+			if (!payload) return;
+			if (payload.error) {
+				sttInFlight = false;
+				config.onError(payload.message || "Transcription failed.");
+				return;
+			}
+			handleTranscript(payload.text || "", payload.requestId);
+		}
+
+		function tickVad () {
+			if (!active || !analyser) return;
+			const level = rmsLevel();
+			const now = Date.now();
+			const loud = level >= vadThreshold;
+
+			// While TTS is playing, require slightly louder signal to barge in
+			const thresholdOk = speaking ? level >= vadThreshold * 1.8 : loud;
+
+			if (thresholdOk) {
+				lastLoudAt = now;
+				if (!recording && !sttInFlight) {
+					beginRecording();
+					if (mode === "wake") {
+						config.onPartial("Heard you…", "wake");
+					} else if (mode === "listening") {
+						config.onPartial(pendingTranscript || "Listening…", "listening");
+					}
+				}
+			}
+
+			if (recording) {
+				const silentFor = now - lastLoudAt;
+				const spokenFor = now - speechStartedAt;
+				if (spokenFor >= maxUtteranceMs || (spokenFor >= minSpeechMs && silentFor >= (config.silenceMs || 1500))) {
+					finishRecording();
+				}
+			}
+		}
+
+		async function startMic () {
+			stream = await navigator.mediaDevices.getUserMedia({
+				audio: {
+					echoCancellation: true,
+					noiseSuppression: true,
+					autoGainControl: true
+				},
+				video: false
+			});
+
+			audioContext = new (global.AudioContext || global.webkitAudioContext)();
+			const source = audioContext.createMediaStreamSource(stream);
+			analyser = audioContext.createAnalyser();
+			analyser.fftSize = 2048;
+			source.connect(analyser);
+			if (audioContext.state === "suspended") {
+				await audioContext.resume();
+			}
+
+			clearVad();
+			vadTimer = global.setInterval(tickVad, 80);
+		}
+
+		async function start () {
+			if (!supported) {
+				config.onError("Microphone APIs are not available in this browser.");
+				return;
+			}
 			active = true;
 			setMode("wake");
-			tryStart();
+			try {
+				await startMic();
+				config.onPartial(`Say "${config.wakeWord || "hey mirror"}"`, "wake");
+			} catch (error) {
+				active = false;
+				if (error && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
+					config.onError("Microphone permission denied. Allow mic access for hands-free talk.");
+				} else {
+					config.onError(error.message || "Could not open microphone.");
+				}
+			}
 		}
 
 		function stop () {
 			active = false;
-			clearSilenceTimer();
-			if (restartTimer) {
-				global.clearTimeout(restartTimer);
-				restartTimer = null;
-			}
+			clearVad();
 			stopSpeaking();
-			if (recognition) {
+			sttInFlight = false;
+			if (recording && mediaRecorder) {
 				try {
-					recognition.onend = null;
-					recognition.stop();
+					mediaRecorder.onstop = null;
+					mediaRecorder.stop();
 				} catch {
 					// ignore
 				}
-				recognition = null;
 			}
+			recording = false;
+			mediaRecorder = null;
+			recordChunks = [];
+			if (stream) {
+				stream.getTracks().forEach((track) => track.stop());
+				stream = null;
+			}
+			if (audioContext) {
+				audioContext.close().catch(() => {});
+				audioContext = null;
+			}
+			analyser = null;
 		}
 
 		function markSpeaking () {
 			speaking = true;
 			setMode("speaking");
-			clearSilenceTimer();
 		}
 
 		function markIdleWake () {
@@ -219,11 +375,6 @@
 			setMode("wake");
 		}
 
-		/**
-		 * Speak text with browser TTS.
-		 * @param {string} text
-		 * @param {function} [onEnd]
-		 */
 		function speak (text, onEnd) {
 			stopSpeaking();
 			if (!text || !global.speechSynthesis) {
@@ -245,9 +396,7 @@
 		}
 
 		function stopSpeaking () {
-			if (global.speechSynthesis) {
-				global.speechSynthesis.cancel();
-			}
+			if (global.speechSynthesis) global.speechSynthesis.cancel();
 			speaking = false;
 		}
 
@@ -263,9 +412,10 @@
 			markSpeaking,
 			markIdleWake,
 			armPostReplyListen,
+			handleSttResult,
 			getMode,
 			matchWakeWord,
-			supported: Boolean(SpeechRecognition)
+			supported
 		};
 	}
 
