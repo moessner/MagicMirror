@@ -165,21 +165,36 @@ module.exports = NodeHelper.create({
 		const audio = Buffer.from(audioBase64, "base64");
 		const modelId = settings.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL;
 
-		const transcript = await transcribe({
-			model: openai.transcription(modelId),
-			audio,
-			providerOptions: {
-				openai: {
-					language: (settings.voiceLang || "en").slice(0, 2)
+		try {
+			const transcript = await transcribe({
+				model: openai.transcription(modelId),
+				audio,
+				providerOptions: {
+					openai: {
+						language: (settings.voiceLang || "en").slice(0, 2)
+					}
 				}
-			}
-		});
+			});
 
-		this.sendSocketNotification("AI_STT_RESULT", {
-			instanceId,
-			requestId,
-			text: transcript.text || "",
-			mimeType: mimeType || "audio/webm"
-		});
+			this.sendSocketNotification("AI_STT_RESULT", {
+				instanceId,
+				requestId,
+				text: transcript.text || "",
+				mimeType: mimeType || "audio/webm"
+			});
+		} catch (error) {
+			const message = error?.message || String(error);
+			// Silence / non-speech clips are common during wake listening.
+			if (/no transcript/i.test(message)) {
+				this.sendSocketNotification("AI_STT_RESULT", {
+					instanceId,
+					requestId,
+					text: "",
+					mimeType: mimeType || "audio/webm"
+				});
+				return;
+			}
+			throw error;
+		}
 	}
 });
