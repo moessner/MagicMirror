@@ -418,14 +418,35 @@
 			openConversationGate(wake.remainder);
 		}
 
-		let pendingFunctionCalls = 0;
+		/** @type {Set<string>} */
+		const pendingCallIds = new Set();
+		let assistantAudioPlaying = false;
+		const handledCallIds = new Set();
 
 		function sendEvent (event) {
 			if (!dataChannel || dataChannel.readyState !== "open") return;
 			dataChannel.send(JSON.stringify(event));
 		}
 
+		function hasPendingFunctionCalls () {
+			return pendingCallIds.size > 0;
+		}
+
+		function responseHasFunctionCall (event) {
+			const output = event?.response?.output || event?.output || [];
+			if (!Array.isArray(output)) return false;
+			return output.some((item) => item && item.type === "function_call");
+		}
+
+		function finishAssistantTurn () {
+			if (hasPendingFunctionCalls() || assistantAudioPlaying) return;
+			setMode("listening");
+			setStatus("Listening…");
+			scheduleRemute();
+		}
+
 		function sendFunctionOutput (callId, outputObject) {
+			if (!callId) return;
 			const output =
 				typeof outputObject === "string" ? outputObject : JSON.stringify(outputObject ?? {});
 			sendEvent({
@@ -436,21 +457,31 @@
 					output
 				}
 			});
-			if (pendingFunctionCalls > 0) pendingFunctionCalls -= 1;
+			pendingCallIds.delete(callId);
 			sendEvent({ type: "response.create" });
 		}
 
 		function handleFunctionCallDone (event) {
-			const name = event.name || "";
-			const callId = event.call_id || event.callId;
+			const name = event.name || event.item?.name || "";
+			const callId = event.call_id || event.callId || event.item?.call_id;
+			if (!callId || handledCallIds.has(callId)) return;
+			handledCallIds.add(callId);
+			// Bound memory for long sessions
+			if (handledCallIds.size > 50) {
+				handledCallIds.clear();
+			}
+
 			let args = {};
+			const rawArgs = event.arguments ?? event.item?.arguments;
 			try {
-				args = event.arguments ? JSON.parse(event.arguments) : {};
+				args = rawArgs ? JSON.parse(rawArgs) : {};
 			} catch {
 				args = {};
 			}
-			pendingFunctionCalls += 1;
+
+			pendingCallIds.add(callId);
 			clearRemuteTimer();
+			assistantAudioPlaying = false;
 			setMode("thinking");
 			setStatus("Fetching…");
 			if (typeof config.onFunctionCall === "function") {
@@ -492,11 +523,18 @@
 				case "response.created":
 					assistantBuffer = "";
 					if (typeof config.onAssistantCaption === "function") config.onAssistantCaption("");
-					setMode("thinking");
-					setStatus("Thinking…");
+					if (!hasPendingFunctionCalls()) {
+						setMode("thinking");
+						setStatus("Thinking…");
+					}
 					break;
 				case "response.function_call_arguments.done":
 					handleFunctionCallDone(event);
+					break;
+				case "response.output_item.done":
+					if (event.item?.type === "function_call") {
+						handleFunctionCallDone(event.item);
+					}
 					break;
 				case "response.output_audio_transcript.delta":
 				case "response.audio_transcript.delta":
@@ -504,6 +542,7 @@
 						assistantBuffer += event.delta;
 						if (typeof config.onAssistantDelta === "function") config.onAssistantDelta(event.delta);
 						else if (typeof config.onAssistantCaption === "function") config.onAssistantCaption(assistantBuffer);
+						clearRemuteTimer();
 						setMode("speaking");
 					}
 					break;
@@ -514,19 +553,29 @@
 					break;
 				case "output_audio_buffer.started":
 				case "response.output_audio.delta":
+					assistantAudioPlaying = true;
+					clearRemuteTimer();
 					setMode("speaking");
 					setStatus(`${config.characterName || "Pixel"} is speaking…`);
 					break;
 				case "output_audio_buffer.stopped":
+					assistantAudioPlaying = false;
+					finishAssistantTurn();
+					break;
 				case "response.done":
-					if (pendingFunctionCalls > 0) {
+					// Tool-only responses must not arm remute — that was dematerializing
+					// mid-session and breaking subsequent get_weather UI updates.
+					if (hasPendingFunctionCalls() || responseHasFunctionCall(event)) {
+						assistantAudioPlaying = false;
 						setMode("thinking");
 						setStatus("Fetching…");
 						break;
 					}
-					setMode("listening");
-					setStatus("Listening…");
-					scheduleRemute();
+					if (assistantAudioPlaying) {
+						// Wait for output_audio_buffer.stopped so we don't remute early.
+						break;
+					}
+					finishAssistantTurn();
 					break;
 				case "error":
 					config.onError(event.error?.message || event.message || "Realtime session error");
@@ -660,7 +709,9 @@
 
 		function destroyPeer () {
 			connected = false;
-			pendingFunctionCalls = 0;
+			pendingCallIds.clear();
+			handledCallIds.clear();
+			assistantAudioPlaying = false;
 			if (dataChannel) {
 				try {
 					dataChannel.close();

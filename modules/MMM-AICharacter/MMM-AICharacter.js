@@ -10,7 +10,7 @@ Module.register("MMM-AICharacter", {
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers.",
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers. Call get_weather again on every weather question, even if you already answered weather earlier in the session.",
 		postSpeakListenMs: 8000,
 		wakeSilenceMs: 550,
 		vadThreshold: 0.015,
@@ -56,6 +56,7 @@ Module.register("MMM-AICharacter", {
 		this.pendingTokenRequestId = null;
 		this.weatherEl = null;
 		this.pendingWeather = new Map();
+		this.cachedGeo = null;
 	},
 
 	getDom () {
@@ -270,9 +271,11 @@ Module.register("MMM-AICharacter", {
 	},
 
 	clearWeatherCard () {
-		if (!this.weatherEl) return;
-		this.weatherEl.hidden = true;
-		this.weatherEl.innerHTML = "";
+		const weatherEl = this.ensureWeatherElement();
+		if (!weatherEl) return;
+		weatherEl.hidden = true;
+		weatherEl.setAttribute("hidden", "hidden");
+		weatherEl.innerHTML = "";
 		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--weather");
 	},
 
@@ -285,8 +288,27 @@ Module.register("MMM-AICharacter", {
 		}
 	},
 
+	ensureWeatherElement () {
+		if (this.weatherEl && this.wrapper && this.wrapper.contains(this.weatherEl)) {
+			return this.weatherEl;
+		}
+		if (this.wrapper) {
+			this.weatherEl = this.wrapper.querySelector(".mmm-ai-character__weather");
+		}
+		return this.weatherEl;
+	},
+
 	showWeatherCard (data) {
-		if (!this.config.showWeatherCard || !this.weatherEl || !data || data.error) return;
+		const weatherEl = this.ensureWeatherElement();
+		if (!this.config.showWeatherCard || !weatherEl || !data || data.error) return;
+
+		// A pending dematerialize would clear the card right after a follow-up ask.
+		if (this.vanishTimer) {
+			this.clearAppearVanishTimers();
+			this.avatarVisible = true;
+			if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--present");
+		}
+
 		const lib = (typeof MMM_AICharacterLib !== "undefined" && MMM_AICharacterLib) || {};
 		const iconClass =
 			typeof lib.weatherIconClass === "function"
@@ -313,7 +335,7 @@ Module.register("MMM-AICharacter", {
 			})
 			.join("");
 
-		this.weatherEl.innerHTML = `
+		weatherEl.innerHTML = `
 			<div class="mmm-ai-character__weather-main">
 				<i class="mmm-ai-character__weather-icon ${iconClass}" aria-hidden="true"></i>
 				<div class="mmm-ai-character__weather-now">
@@ -324,14 +346,24 @@ Module.register("MMM-AICharacter", {
 			</div>
 			<div class="mmm-ai-character__weather-days">${days}</div>
 		`;
-		this.weatherEl.hidden = false;
-		if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--weather");
+		weatherEl.hidden = false;
+		weatherEl.removeAttribute("hidden");
+		if (this.wrapper) {
+			this.wrapper.classList.add("mmm-ai-character--weather");
+			if (this.avatarVisible || !this.wakeGatedAppearance()) {
+				this.wrapper.classList.add("mmm-ai-character--present");
+			}
+		}
 	},
 
 	resolveWeatherLocation (locationHint) {
 		const place = typeof locationHint === "string" ? locationHint.trim() : "";
 		if (place) {
 			return Promise.resolve({ location: place });
+		}
+
+		if (this.cachedGeo && Date.now() - this.cachedGeo.at < 15 * 60 * 1000) {
+			return Promise.resolve({ lat: this.cachedGeo.lat, lon: this.cachedGeo.lon });
 		}
 
 		const fallbackLat = this.config.lat;
@@ -341,28 +373,23 @@ Module.register("MMM-AICharacter", {
 			fallbackLon != null &&
 			!Number.isNaN(Number(fallbackLat)) &&
 			!Number.isNaN(Number(fallbackLon));
+		const fallback = hasFallback
+			? { lat: Number(fallbackLat), lon: Number(fallbackLon) }
+			: { error: "Geolocation unavailable and no lat/lon configured." };
 
 		return new Promise((resolve) => {
 			if (!navigator.geolocation) {
-				resolve(
-					hasFallback
-						? { lat: Number(fallbackLat), lon: Number(fallbackLon) }
-						: { error: "Geolocation unavailable and no lat/lon configured." }
-				);
+				resolve(fallback);
 				return;
 			}
 			navigator.geolocation.getCurrentPosition(
 				(pos) => {
-					resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+					const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+					this.cachedGeo = { ...coords, at: Date.now() };
+					resolve(coords);
 				},
-				() => {
-					resolve(
-						hasFallback
-							? { lat: Number(fallbackLat), lon: Number(fallbackLon) }
-							: { error: "Geolocation denied and no lat/lon configured." }
-					);
-				},
-				{ enableHighAccuracy: false, timeout: 6000, maximumAge: 10 * 60 * 1000 }
+				() => resolve(fallback),
+				{ enableHighAccuracy: false, timeout: 4000, maximumAge: 10 * 60 * 1000 }
 			);
 		});
 	},
@@ -377,6 +404,11 @@ Module.register("MMM-AICharacter", {
 				});
 			}
 			return;
+		}
+
+		// Keep the hologram up while weather is fetched/rendered.
+		if (this.wakeGatedAppearance()) {
+			this.materializeAvatar("thinking");
 		}
 
 		const requestId = `wx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -431,9 +463,10 @@ Module.register("MMM-AICharacter", {
 		const shellState = state === "wake" ? "idle" : state;
 		if (this.wrapper) {
 			const present = this.avatarVisible || !this.wakeGatedAppearance();
+			const weatherOpen = Boolean(this.weatherEl && !this.weatherEl.hidden);
 			this.wrapper.className = `mmm-ai-character mmm-ai-character--${shellState}${
 				present ? " mmm-ai-character--present" : ""
-			}`;
+			}${weatherOpen ? " mmm-ai-character--weather" : ""}`;
 		}
 
 		const gated = this.wakeGatedAppearance();
