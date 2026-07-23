@@ -22,6 +22,16 @@ npm run build    # outputs to public/avatar-app for MagicMirror
 - Buttons for every avatar state
 - Test audio file input (Web Audio lip-sync fallback)
 - Optional Rhubarb Lip Sync JSON textarea
+- **Realtime voice preview** — pick `marin` / `cedar` / etc., edit a sample line, click **Preview voice**
+
+Voice previews call OpenAI `gpt-4o-mini-tts` through a Vite dev middleware (`/api/voice-preview`). Export `OPENAI_API_KEY` before starting the dev server:
+
+```bash
+export OPENAI_API_KEY="…"
+npm run dev
+```
+
+Recommended Realtime voices are marked with ★ (`marin`, `cedar`). Audio plays through the avatar so you can judge both timbre and lip-sync.
 
 ## Rhubarb cues
 

@@ -1,9 +1,11 @@
 import { defineConfig } from "vite";
+import { voicePreviewPlugin } from "./vite.voicePreviewPlugin";
 
 export default defineConfig({
   root: ".",
   publicDir: "public",
   base: "./",
+  plugins: [voicePreviewPlugin()],
   server: {
     port: 5173,
     host: true

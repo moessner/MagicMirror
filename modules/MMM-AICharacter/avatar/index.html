@@ -63,6 +63,10 @@
         border-color: #c77dff;
         box-shadow: 0 0 0 1px rgba(199, 125, 255, 0.5);
       }
+      button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
       #status {
         margin-left: auto;
         font-size: 12px;
@@ -71,15 +75,42 @@
       input[type="file"] {
         display: none;
       }
+      select,
+      input[type="text"],
       textarea {
-        width: min(420px, 100%);
-        height: 54px;
         background: rgba(0, 0, 0, 0.6);
         color: #d7f4ff;
         border: 1px solid rgba(110, 200, 255, 0.25);
         border-radius: 4px;
         font-size: 11px;
-        padding: 6px;
+        padding: 6px 8px;
+      }
+      select {
+        text-transform: none;
+        letter-spacing: 0;
+        min-width: 7.5rem;
+      }
+      #voicePreviewText {
+        width: min(280px, 100%);
+      }
+      textarea {
+        width: min(420px, 100%);
+        height: 54px;
+      }
+      .voice-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        padding-top: 4px;
+        border-top: 1px solid rgba(110, 200, 255, 0.15);
+      }
+      .voice-row label {
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        opacity: 0.75;
       }
     </style>
   </head>
@@ -97,7 +128,19 @@
       <label class="file">Test audio<input id="audioFile" type="file" accept="audio/*" /></label>
       <button id="stopAudio">Stop audio</button>
       <textarea id="cues" placeholder='Optional Rhubarb JSON: [{"start":0,"end":0.2,"value":"X"}, ...]'></textarea>
-      <div id="status">booting…</div>
+      <div class="voice-row">
+        <label for="voiceSelect">Realtime voice</label>
+        <select id="voiceSelect" aria-label="Realtime voice"></select>
+        <input
+          id="voicePreviewText"
+          type="text"
+          maxlength="500"
+          aria-label="Voice preview text"
+          placeholder="Sample line to speak…"
+        />
+        <button id="previewVoice" type="button">Preview voice</button>
+        <div id="status">booting…</div>
+      </div>
     </div>
     <script type="module" src="/src/dev.ts"></script>
   </body>
