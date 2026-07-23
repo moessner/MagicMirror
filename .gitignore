@@ -62,9 +62,9 @@ Temporary Items
 /modules/MMM-AICharacter/avatar/node_modules/
 
 # Ignore users config file but keep the samples.
-config
-!config/config.js.sample
-!config/custom.css.sample
+/config
+!/config/config.js.sample
+!/config/custom.css.sample
 
 # Vim
 ## swap
