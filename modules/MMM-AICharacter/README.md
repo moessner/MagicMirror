@@ -60,6 +60,7 @@ const aiCharacterModule = {
     postSpeakListenMs: 8000,
     wakeSilenceMs: 550,
     vadThreshold: 0.015,
+    appearOnWake: true, // hologram only visible during an active wake session
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
@@ -75,6 +76,7 @@ const aiCharacterModule = {
 | `postSpeakListenMs` | `8000` | Follow-up window without repeating the wake word |
 | `wakeSilenceMs` | `550` | End-of-clip silence for wake-word detection only |
 | `vadThreshold` | `0.015` | Local mic loudness gate for starting a wake clip |
+| `appearOnWake` | `true` | Materialize on wake, dematerialize when the follow-up window ends |
 
 Start MagicMirror with the OpenAI key available to the process:
 
@@ -86,12 +88,13 @@ npm run server
 
 ## Hands-free flow
 
-1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake).
-2. Say the wake word (default `alexa`, configurable via `wakeWord`).
+1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake). The hologram stays hidden.
+2. Say the wake word (default `alexa`, configurable via `wakeWord`) — the character materializes.
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
 5. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
-6. Interrupt anytime by speaking over the reply (Realtime barge-in).
+6. After that window, the character dematerializes until the next wake word.
+7. Interrupt anytime by speaking over the reply (Realtime barge-in).
 
 ## Notes
 

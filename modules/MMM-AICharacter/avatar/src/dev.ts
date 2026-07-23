@@ -18,6 +18,9 @@ async function boot(): Promise<void> {
   const stopAudioBtn = document.getElementById("stopAudio")!;
 
   const app = await createAvatar(stage);
+  // Dev page shows the character immediately; the MagicMirror embed stays dormant until wake.
+  app.setState("materializing");
+  window.setTimeout(() => app.setState("idle"), 1150);
   statusEl.textContent = `state: ${app.getState()}`;
 
   for (const voice of REALTIME_VOICES) {

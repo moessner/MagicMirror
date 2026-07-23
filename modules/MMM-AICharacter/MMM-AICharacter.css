@@ -34,6 +34,25 @@
 
 .mmm-ai-character__stage--holo {
   min-height: min(78vh, 42rem);
+  transition:
+    min-height 0.6s ease,
+    opacity 0.45s ease;
+}
+
+/* Wake-gated: collapse the empty stage until the hologram materializes. */
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__stage--holo {
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__avatar {
+  height: 0;
+}
+
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__user,
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant {
+  display: none;
 }
 
 .mmm-ai-character__avatar {
@@ -42,6 +61,7 @@
   border: 0;
   background: #000;
   display: block;
+  transition: height 0.6s ease;
 }
 
 .mmm-ai-character__captions {

@@ -154,8 +154,8 @@ export class AvatarApp {
     this.running = true;
     this.lastTs = performance.now();
     app.ticker.add(() => this.tick());
-    this.states.setState("materializing", 1100);
-    window.setTimeout(() => this.states.setState("idle", 700), 1150);
+    // Stay invisible until the mirror module materializes on wake word.
+    this.states.setState("dormant", 0);
   }
 
   setState(state: AvatarState): void {

@@ -14,6 +14,8 @@ Module.register("MMM-AICharacter", {
 		postSpeakListenMs: 8000,
 		wakeSilenceMs: 550,
 		vadThreshold: 0.015,
+		/** When true (and wakeWord is set), avatar stays invisible until wake, then dematerializes after the session. */
+		appearOnWake: true,
 		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
@@ -37,6 +39,9 @@ Module.register("MMM-AICharacter", {
 		this.voice = null;
 		this.uiState = "idle";
 		this.avatarReady = false;
+		this.avatarVisible = false;
+		this.appearTimer = null;
+		this.vanishTimer = null;
 		this.pendingRemoteStream = null;
 		this.avatarStreamRetries = 0;
 		this.pendingTokenRequestId = null;
@@ -57,7 +62,8 @@ Module.register("MMM-AICharacter", {
 		iframe.setAttribute("title", `${this.config.characterName || "Pixel"} holographic avatar`);
 		iframe.addEventListener("load", () => {
 			this.avatarReady = true;
-			this.postAvatar({ type: "avatar:setState", state: "idle" });
+			this.avatarVisible = false;
+			this.postAvatar({ type: "avatar:setState", state: "dormant" });
 			if (this.pendingRemoteStream) {
 				this.attachAvatarStream(this.pendingRemoteStream);
 			}
@@ -189,40 +195,113 @@ Module.register("MMM-AICharacter", {
 		}
 	},
 
+	wakeGatedAppearance () {
+		return this.config.appearOnWake !== false && Boolean(this.config.wakeWord);
+	},
+
+	clearAppearVanishTimers () {
+		if (this.appearTimer) {
+			clearTimeout(this.appearTimer);
+			this.appearTimer = null;
+		}
+		if (this.vanishTimer) {
+			clearTimeout(this.vanishTimer);
+			this.vanishTimer = null;
+		}
+	},
+
+	materializeAvatar (nextState) {
+		this.clearAppearVanishTimers();
+		if (this.avatarVisible) {
+			this.postAvatar({ type: "avatar:setState", state: nextState });
+			return;
+		}
+		this.avatarVisible = true;
+		if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--present");
+		this.postAvatar({ type: "avatar:setState", state: "materializing" });
+		this.appearTimer = setTimeout(() => {
+			this.appearTimer = null;
+			this.postAvatar({ type: "avatar:setState", state: nextState });
+		}, 1150);
+	},
+
+	dematerializeAvatar () {
+		this.clearAppearVanishTimers();
+		if (!this.avatarVisible) {
+			this.postAvatar({ type: "avatar:setState", state: "dormant" });
+			if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--present");
+			return;
+		}
+		// Keep --present until the fade finishes so the stage doesn't collapse mid-animation.
+		this.postAvatar({ type: "avatar:setState", state: "dematerializing" });
+		this.vanishTimer = setTimeout(() => {
+			this.vanishTimer = null;
+			this.avatarVisible = false;
+			this.postAvatar({ type: "avatar:setState", state: "dormant" });
+			if (this.wrapper) {
+				this.wrapper.classList.remove("mmm-ai-character--present");
+			}
+			if (this.conversation) {
+				this.conversation.setUserCaption("");
+				this.conversation.setAssistantCaption("");
+			}
+		}, 1300);
+	},
+
 	suspend () {
 		if (this.voice) this.voice.stop();
 		this.attachAvatarStream(null);
-		this.postAvatar({ type: "avatar:setState", state: "dormant" });
+		this.dematerializeAvatar();
 	},
 
 	resume () {
 		if (this.voice && this.voice.supported) this.voice.start();
-		this.postAvatar({ type: "avatar:setState", state: "idle" });
+		if (!this.wakeGatedAppearance()) {
+			this.materializeAvatar("idle");
+		} else {
+			this.dematerializeAvatar();
+		}
 	},
 
 	setUiState (state) {
 		this.uiState = state;
+		const shellState = state === "wake" ? "idle" : state;
 		if (this.wrapper) {
-			this.wrapper.className = `mmm-ai-character mmm-ai-character--${state === "wake" ? "idle" : state}`;
+			const present = this.avatarVisible || !this.wakeGatedAppearance();
+			this.wrapper.className = `mmm-ai-character mmm-ai-character--${shellState}${
+				present ? " mmm-ai-character--present" : ""
+			}`;
 		}
+
+		const gated = this.wakeGatedAppearance();
+		if (gated && (state === "wake" || state === "idle")) {
+			this.dematerializeAvatar();
+			return;
+		}
+
 		const avatarState =
-			state === "wake" || state === "idle"
-				? "idle"
-				: state === "listening"
-					? "listening"
-					: state === "thinking"
-						? "thinking"
-						: state === "speaking"
-							? "speaking"
-							: state === "error"
-								? "error"
-								: "idle";
+			state === "listening"
+				? "listening"
+				: state === "thinking"
+					? "thinking"
+					: state === "speaking"
+						? "speaking"
+						: state === "error"
+							? "error"
+							: "idle";
+
+		if (gated) {
+			this.materializeAvatar(avatarState);
+			return;
+		}
+
+		this.avatarVisible = true;
 		this.postAvatar({ type: "avatar:setState", state: avatarState });
 	},
 
 	handleVoiceMode (mode) {
 		if (mode === "wake") {
-			this.setUiState("idle");
+			this.setUiState("wake");
 			return;
 		}
 		if (mode === "listening") {
