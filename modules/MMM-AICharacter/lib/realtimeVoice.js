@@ -14,13 +14,130 @@
 			.trim();
 	}
 
-	function matchWakeWord (transcript, wakeWord) {
+	/** Collapse vowels / repeats so "mirror"≈"miror"≈"mere" style STT slips still match. */
+	function soften (text) {
+		return normalize(text)
+			.replace(/(.)\1+/g, "$1")
+			.replace(/[aeiouy]+/g, "a")
+			.replace(/\s+/g, "");
+	}
+
+	function editDistance (a, b) {
+		const s = String(a || "");
+		const t = String(b || "");
+		const rows = s.length + 1;
+		const cols = t.length + 1;
+		const dp = new Array(rows);
+		for (let i = 0; i < rows; i++) {
+			dp[i] = new Array(cols);
+			dp[i][0] = i;
+		}
+		for (let j = 0; j < cols; j++) dp[0][j] = j;
+		for (let i = 1; i < rows; i++) {
+			for (let j = 1; j < cols; j++) {
+				const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+				dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+			}
+		}
+		return dp[s.length][t.length];
+	}
+
+	function defaultWakeAliases (wakeWord) {
+		const w = normalize(wakeWord);
+		if (w === "hey mirror") {
+			return [
+				"hey mirror",
+				"a mirror",
+				"hey mere",
+				"hey mira",
+				"hey mirra",
+				"hey miror",
+				"hey mirro",
+				"hey myrrh",
+				"hey miller",
+				"hey nearer",
+				"hey mayor",
+				"hey mera",
+				"hey meera",
+				"hay mirror",
+				"hey mirar",
+				"hey merror",
+				"hey mirror mirror"
+			];
+		}
+		return [w];
+	}
+
+	/**
+	 * Fuzzy wake match tolerant of STT mishears (not just exact pronunciation).
+	 * @param {string} transcript
+	 * @param {string} wakeWord
+	 * @param {string[]} [aliases]
+	 * @returns {{matched:boolean, remainder:string, heard:string}}
+	 */
+	function matchWakeWord (transcript, wakeWord, aliases) {
 		const t = normalize(transcript);
 		const w = normalize(wakeWord);
-		if (!w) return { matched: true, remainder: t };
-		const idx = t.indexOf(w);
-		if (idx === -1) return { matched: false, remainder: "" };
-		return { matched: true, remainder: t.slice(idx + w.length).trim() };
+		if (!w) return { matched: true, remainder: t, heard: t };
+		if (!t) return { matched: false, remainder: "", heard: "" };
+
+		const phrases = Array.from(
+			new Set(
+				[w]
+					.concat(Array.isArray(aliases) ? aliases : [])
+					.concat(defaultWakeAliases(w))
+					.map(normalize)
+					.filter(Boolean)
+			)
+		);
+
+		for (const phrase of phrases) {
+			const idx = t.indexOf(phrase);
+			if (idx !== -1) {
+				return { matched: true, remainder: t.slice(idx + phrase.length).trim(), heard: t };
+			}
+		}
+
+		// Soft phonetic containment, e.g. "hey miror" ≈ "hey mirror"
+		const softT = soften(t);
+		for (const phrase of phrases) {
+			const softP = soften(phrase);
+			if (softP.length >= 4 && softT.includes(softP)) {
+				return { matched: true, remainder: "", heard: t };
+			}
+		}
+
+		// Token window: require each wake token to fuzzy-match a transcript token in order.
+		const wakeTokens = w.split(" ").filter(Boolean);
+		const heardTokens = t.split(" ").filter(Boolean);
+		if (wakeTokens.length >= 1 && heardTokens.length >= wakeTokens.length) {
+			for (let start = 0; start <= heardTokens.length - wakeTokens.length; start++) {
+				let ok = true;
+				for (let i = 0; i < wakeTokens.length; i++) {
+					const want = wakeTokens[i];
+					const got = heardTokens[start + i];
+					const maxDist = want.length <= 3 ? 1 : 2;
+					const close =
+						got === want ||
+						soften(got) === soften(want) ||
+						editDistance(got, want) <= maxDist ||
+						editDistance(soften(got), soften(want)) <= 1;
+					if (!close) {
+						ok = false;
+						break;
+					}
+				}
+				if (ok) {
+					return {
+						matched: true,
+						remainder: heardTokens.slice(start + wakeTokens.length).join(" "),
+						heard: t
+					};
+				}
+			}
+		}
+
+		return { matched: false, remainder: "", heard: t };
 	}
 
 	function blobToBase64 (blob) {
@@ -49,6 +166,7 @@
 	/**
 	 * @param {object} config
 	 * @param {string} config.wakeWord
+	 * @param {string[]} [config.wakeAliases]
 	 * @param {string} config.systemPrompt
 	 * @param {number} config.postSpeakListenMs
 	 * @param {number} [config.wakeSilenceMs]
@@ -103,9 +221,10 @@
 		let userBuffer = "";
 
 		const mimeType = pickMimeType();
-		const vadThreshold = typeof config.vadThreshold === "number" ? config.vadThreshold : 0.025;
-		const wakeSilenceMs = typeof config.wakeSilenceMs === "number" ? config.wakeSilenceMs : 700;
-		const minSpeechMs = 280;
+		// Slightly more sensitive mic gate — quiet "hey mirror" was often missed.
+		const vadThreshold = typeof config.vadThreshold === "number" ? config.vadThreshold : 0.015;
+		const wakeSilenceMs = typeof config.wakeSilenceMs === "number" ? config.wakeSilenceMs : 550;
+		const minSpeechMs = 220;
 		const maxWakeClipMs = 6000;
 
 		function wakeEnabled () {
@@ -275,9 +394,13 @@
 			sttInFlight = false;
 			if (!wakeEnabled() || (rtcTrack && rtcTrack.enabled)) return;
 
-			const wake = matchWakeWord(payload.text || "", config.wakeWord || "");
+			const wake = matchWakeWord(payload.text || "", config.wakeWord || "", config.wakeAliases);
 			if (!wake.matched) {
-				setStatus(`Say "${config.wakeWord}"`);
+				if (wake.heard) {
+					setStatus(`Heard "${wake.heard}" — say "${config.wakeWord}"`);
+				} else {
+					setStatus(`Say "${config.wakeWord}"`);
+				}
 				return;
 			}
 			openConversationGate(wake.remainder);

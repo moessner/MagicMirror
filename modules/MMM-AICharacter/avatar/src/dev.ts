@@ -26,7 +26,7 @@ async function boot(): Promise<void> {
     option.textContent = voice === "marin" || voice === "cedar" ? `${voice} ★` : voice;
     voiceSelect.appendChild(option);
   }
-  voiceSelect.value = "marin";
+  voiceSelect.value = "sage";
   voicePreviewText.value = DEFAULT_VOICE_PREVIEW_TEXT;
 
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button[data-state]"));

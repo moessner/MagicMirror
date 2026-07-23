@@ -50,14 +50,16 @@ const aiCharacterModule = {
   position: "middle_center",
   config: {
     wakeWord: "hey mirror", // set "" for always-open live mode
+    wakeAliases: [], // optional extra phrases accepted as wake
     realtimeModel: "gpt-realtime",
-    voice: "marin",
+    voice: "sage",
     transcriptionModel: "gpt-4o-mini-transcribe",
     voiceLang: "en-US",
     characterName: "Pixel",
     systemPrompt: "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
     postSpeakListenMs: 8000,
-    wakeSilenceMs: 700,
+    wakeSilenceMs: 550,
+    vadThreshold: 0.015,
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
@@ -66,11 +68,13 @@ const aiCharacterModule = {
 | Option | Default | Notes |
 |--------|---------|--------|
 | `wakeWord` | `"hey mirror"` | Empty string disables wake gating (always live) |
+| `wakeAliases` | `[]` | Extra accepted phrases; built-in fuzzy aliases also cover common STT mishears |
 | `realtimeModel` | `"gpt-realtime"` | OpenAI Realtime speech-to-speech model |
-| `voice` | `"marin"` | Realtime output voice (`marin`, `cedar`, etc.) |
+| `voice` | `"sage"` | Realtime output voice (`sage`, `marin`, `cedar`, etc.) |
 | `transcriptionModel` | `"gpt-4o-mini-transcribe"` | Used for wake-word STT + Realtime input captions |
 | `postSpeakListenMs` | `8000` | Follow-up window without repeating the wake word |
-| `wakeSilenceMs` | `700` | End-of-clip silence for wake-word detection only |
+| `wakeSilenceMs` | `550` | End-of-clip silence for wake-word detection only |
+| `vadThreshold` | `0.015` | Local mic loudness gate for starting a wake clip |
 
 Start MagicMirror with the OpenAI key available to the process:
 

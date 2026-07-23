@@ -3,15 +3,17 @@
 Module.register("MMM-AICharacter", {
 	defaults: {
 		wakeWord: "hey mirror",
+		wakeAliases: [],
 		realtimeModel: "gpt-realtime",
-		voice: "marin",
+		voice: "sage",
 		transcriptionModel: "gpt-4o-mini-transcribe",
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
 			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions.",
 		postSpeakListenMs: 8000,
-		wakeSilenceMs: 700,
+		wakeSilenceMs: 550,
+		vadThreshold: 0.015,
 		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
@@ -100,10 +102,12 @@ Module.register("MMM-AICharacter", {
 
 		this.voice = lib.createRealtimeVoiceController({
 			wakeWord: this.config.wakeWord,
+			wakeAliases: this.config.wakeAliases,
 			systemPrompt: this.config.systemPrompt,
 			characterName: this.config.characterName,
 			postSpeakListenMs: this.config.postSpeakListenMs,
 			wakeSilenceMs: this.config.wakeSilenceMs,
+			vadThreshold: this.config.vadThreshold,
 			requestToken: (requestId) => {
 				this.pendingTokenRequestId = requestId;
 				this.sendSocketNotification("AI_REALTIME_TOKEN", {

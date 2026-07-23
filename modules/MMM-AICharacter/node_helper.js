@@ -2,7 +2,7 @@ const NodeHelper = require("node_helper");
 const Log = require("logger");
 
 const DEFAULT_REALTIME_MODEL = "gpt-realtime";
-const DEFAULT_VOICE = "marin";
+const DEFAULT_VOICE = "sage";
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 
 module.exports = NodeHelper.create({
