@@ -1,0 +1,644 @@
+/* global window, navigator, MediaRecorder, Blob, FileReader, RTCPeerConnection */
+/**
+ * OpenAI Realtime WebRTC voice session for MMM-AICharacter.
+ * Local STT is used only to arm the wake word; conversation audio is speech-to-speech.
+ */
+(function (global) {
+	"use strict";
+
+	function normalize (text) {
+		return String(text || "")
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}\s]/gu, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	function matchWakeWord (transcript, wakeWord) {
+		const t = normalize(transcript);
+		const w = normalize(wakeWord);
+		if (!w) return { matched: true, remainder: t };
+		const idx = t.indexOf(w);
+		if (idx === -1) return { matched: false, remainder: "" };
+		return { matched: true, remainder: t.slice(idx + w.length).trim() };
+	}
+
+	function blobToBase64 (blob) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				const result = String(reader.result || "");
+				const comma = result.indexOf(",");
+				resolve(comma >= 0 ? result.slice(comma + 1) : result);
+			};
+			reader.onerror = () => reject(reader.error || new Error("Failed to read audio"));
+			reader.readAsDataURL(blob);
+		});
+	}
+
+	function pickMimeType () {
+		const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+		for (const type of candidates) {
+			if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
+				return type;
+			}
+		}
+		return "";
+	}
+
+	/**
+	 * @param {object} config
+	 * @param {string} config.wakeWord
+	 * @param {string} config.systemPrompt
+	 * @param {number} config.postSpeakListenMs
+	 * @param {number} [config.wakeSilenceMs]
+	 * @param {number} [config.vadThreshold]
+	 * @param {function} config.requestToken - () => Promise<{value:string}>
+	 * @param {function} config.onTranscribeRequest - ({requestId, audioBase64, mimeType}) => void
+	 * @param {function} config.onState - (mode) => void
+	 * @param {function} config.onStatus - (text) => void
+	 * @param {function} config.onUserCaption - (text) => void
+	 * @param {function} config.onAssistantCaption - (text) => void
+	 * @param {function} config.onAssistantDelta - (delta) => void
+	 * @param {function} config.onRemoteStream - (MediaStream|null) => void
+	 * @param {function} config.onError - (message) => void
+	 */
+	function createRealtimeVoiceController (config) {
+		const supported = Boolean(
+			global.navigator &&
+				navigator.mediaDevices &&
+				navigator.mediaDevices.getUserMedia &&
+				global.RTCPeerConnection &&
+				global.MediaRecorder
+		);
+
+		let active = false;
+		let mode = "wake";
+		let armedUntil = 0;
+		let localStream = null;
+		let rtcTrack = null;
+		let peer = null;
+		let dataChannel = null;
+		let remoteStream = null;
+		let audioEl = null;
+		let connecting = false;
+		let connected = false;
+		let tokenRequestId = 0;
+		let pendingTokenResolve = null;
+		let pendingTokenReject = null;
+
+		// Local wake-arming VAD / recorder (mic muted to OpenAI until armed)
+		let audioContext = null;
+		let analyser = null;
+		let vadTimer = null;
+		let mediaRecorder = null;
+		let recordChunks = [];
+		let recording = false;
+		let speechStartedAt = 0;
+		let lastLoudAt = 0;
+		let sttInFlight = false;
+		let sttRequestId = 0;
+		let remuteTimer = null;
+		let assistantBuffer = "";
+		let userBuffer = "";
+
+		const mimeType = pickMimeType();
+		const vadThreshold = typeof config.vadThreshold === "number" ? config.vadThreshold : 0.025;
+		const wakeSilenceMs = typeof config.wakeSilenceMs === "number" ? config.wakeSilenceMs : 700;
+		const minSpeechMs = 280;
+		const maxWakeClipMs = 6000;
+
+		function wakeEnabled () {
+			return Boolean(normalize(config.wakeWord || ""));
+		}
+
+		function setMode (next) {
+			mode = next;
+			if (typeof config.onState === "function") config.onState(next);
+		}
+
+		function setStatus (text) {
+			if (typeof config.onStatus === "function") config.onStatus(text);
+		}
+
+		function setMicOpen (open) {
+			if (rtcTrack) rtcTrack.enabled = Boolean(open);
+		}
+
+		function clearRemuteTimer () {
+			if (remuteTimer) {
+				global.clearTimeout(remuteTimer);
+				remuteTimer = null;
+			}
+		}
+
+		function scheduleRemute () {
+			clearRemuteTimer();
+			const windowMs = config.postSpeakListenMs || 8000;
+			armedUntil = Date.now() + windowMs;
+			remuteTimer = global.setTimeout(() => {
+				remuteTimer = null;
+				if (!active) return;
+				if (Date.now() < armedUntil) return;
+				closeConversationGate();
+			}, windowMs + 50);
+		}
+
+		function openConversationGate (seedUserText) {
+			clearRemuteTimer();
+			setMicOpen(true);
+			setMode("listening");
+			userBuffer = seedUserText || "";
+			assistantBuffer = "";
+			if (userBuffer && typeof config.onUserCaption === "function") {
+				config.onUserCaption(userBuffer);
+			}
+			if (typeof config.onAssistantCaption === "function") config.onAssistantCaption("");
+			setStatus("Listening…");
+			armedUntil = Date.now() + (config.postSpeakListenMs || 8000);
+		}
+
+		function closeConversationGate () {
+			clearRemuteTimer();
+			setMicOpen(false);
+			armedUntil = 0;
+			setMode("wake");
+			if (wakeEnabled()) {
+				setStatus(`Say "${config.wakeWord}"`);
+			} else {
+				setStatus("Listening…");
+			}
+		}
+
+		function rmsLevel () {
+			if (!analyser) return 0;
+			const data = new Uint8Array(analyser.fftSize);
+			analyser.getByteTimeDomainData(data);
+			let sum = 0;
+			for (let i = 0; i < data.length; i++) {
+				const v = (data[i] - 128) / 128;
+				sum += v * v;
+			}
+			return Math.sqrt(sum / data.length);
+		}
+
+		function beginWakeRecording () {
+			if (!localStream || recording || sttInFlight || !wakeEnabled()) return;
+			// Only use local STT while mic is gated closed
+			if (rtcTrack && rtcTrack.enabled) return;
+			try {
+				recordChunks = [];
+				mediaRecorder = mimeType ? new MediaRecorder(localStream, { mimeType }) : new MediaRecorder(localStream);
+				mediaRecorder.ondataavailable = (event) => {
+					if (event.data && event.data.size > 0) recordChunks.push(event.data);
+				};
+				mediaRecorder.onerror = () => {
+					config.onError("Wake-word recording failed.");
+				};
+				mediaRecorder.start(200);
+				recording = true;
+				speechStartedAt = Date.now();
+				lastLoudAt = Date.now();
+				setStatus("Heard you…");
+			} catch (error) {
+				config.onError(error.message || "Could not start wake recording.");
+			}
+		}
+
+		async function finishWakeRecording () {
+			if (!recording || !mediaRecorder) return;
+			recording = false;
+			const recorder = mediaRecorder;
+			mediaRecorder = null;
+
+			const blob = await new Promise((resolve) => {
+				recorder.onstop = () => {
+					resolve(new Blob(recordChunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
+				};
+				try {
+					recorder.stop();
+				} catch {
+					resolve(new Blob([]));
+				}
+			});
+
+			recordChunks = [];
+			if (!active || !blob || blob.size < 1000) return;
+			if (rtcTrack && rtcTrack.enabled) return;
+
+			sttInFlight = true;
+			sttRequestId += 1;
+			const requestId = `wake-${sttRequestId}-${Date.now()}`;
+			setStatus("Checking wake word…");
+
+			try {
+				const audioBase64 = await blobToBase64(blob);
+				config.onTranscribeRequest({
+					requestId,
+					audioBase64,
+					mimeType: blob.type || mimeType || "audio/webm"
+				});
+			} catch (error) {
+				sttInFlight = false;
+				config.onError(error.message || "Failed to encode wake audio.");
+			}
+		}
+
+		function tickVad () {
+			if (!active || !analyser || !wakeEnabled()) return;
+			if (rtcTrack && rtcTrack.enabled) return;
+			if (!connected) return;
+
+			const level = rmsLevel();
+			const now = Date.now();
+			if (level >= vadThreshold) {
+				lastLoudAt = now;
+				if (!recording && !sttInFlight) beginWakeRecording();
+			}
+
+			if (recording) {
+				const silentFor = now - lastLoudAt;
+				const spokenFor = now - speechStartedAt;
+				if (spokenFor >= maxWakeClipMs || (spokenFor >= minSpeechMs && silentFor >= wakeSilenceMs)) {
+					finishWakeRecording();
+				}
+			}
+		}
+
+		function handleSttResult (payload) {
+			if (!payload) return;
+			if (payload.error) {
+				sttInFlight = false;
+				config.onError(payload.message || "Wake transcription failed.");
+				return;
+			}
+			sttInFlight = false;
+			if (!wakeEnabled() || (rtcTrack && rtcTrack.enabled)) return;
+
+			const wake = matchWakeWord(payload.text || "", config.wakeWord || "");
+			if (!wake.matched) {
+				setStatus(`Say "${config.wakeWord}"`);
+				return;
+			}
+			openConversationGate(wake.remainder);
+		}
+
+		function sendEvent (event) {
+			if (!dataChannel || dataChannel.readyState !== "open") return;
+			dataChannel.send(JSON.stringify(event));
+		}
+
+		function handleServerEvent (event) {
+			if (!event || !event.type) return;
+
+			switch (event.type) {
+				case "session.created":
+				case "session.updated":
+					break;
+				case "input_audio_buffer.speech_started":
+					clearRemuteTimer();
+					armedUntil = Date.now() + (config.postSpeakListenMs || 8000);
+					assistantBuffer = "";
+					if (typeof config.onAssistantCaption === "function") config.onAssistantCaption("");
+					setMode("listening");
+					setStatus("Listening…");
+					break;
+				case "input_audio_buffer.speech_stopped":
+					setMode("thinking");
+					setStatus("Thinking…");
+					break;
+				case "conversation.item.input_audio_transcription.delta":
+					if (event.delta) {
+						userBuffer += event.delta;
+						if (typeof config.onUserCaption === "function") config.onUserCaption(userBuffer);
+					}
+					break;
+				case "conversation.item.input_audio_transcription.completed":
+					userBuffer = event.transcript || userBuffer;
+					if (typeof config.onUserCaption === "function") config.onUserCaption(userBuffer);
+					break;
+				case "response.created":
+					assistantBuffer = "";
+					if (typeof config.onAssistantCaption === "function") config.onAssistantCaption("");
+					setMode("thinking");
+					setStatus("Thinking…");
+					break;
+				case "response.output_audio_transcript.delta":
+				case "response.audio_transcript.delta":
+					if (event.delta) {
+						assistantBuffer += event.delta;
+						if (typeof config.onAssistantDelta === "function") config.onAssistantDelta(event.delta);
+						else if (typeof config.onAssistantCaption === "function") config.onAssistantCaption(assistantBuffer);
+						setMode("speaking");
+					}
+					break;
+				case "response.output_audio_transcript.done":
+				case "response.audio_transcript.done":
+					assistantBuffer = event.transcript || assistantBuffer;
+					if (typeof config.onAssistantCaption === "function") config.onAssistantCaption(assistantBuffer);
+					break;
+				case "output_audio_buffer.started":
+				case "response.output_audio.delta":
+					setMode("speaking");
+					setStatus(`${config.characterName || "Pixel"} is speaking…`);
+					break;
+				case "output_audio_buffer.stopped":
+				case "response.done":
+					setMode("listening");
+					setStatus("Listening…");
+					scheduleRemute();
+					break;
+				case "error":
+					config.onError(event.error?.message || event.message || "Realtime session error");
+					break;
+				default:
+					break;
+			}
+		}
+
+		function ensureAudioElement () {
+			if (audioEl) return audioEl;
+			audioEl = global.document.createElement("audio");
+			audioEl.autoplay = true;
+			audioEl.playsInline = true;
+			audioEl.style.display = "none";
+			if (global.document?.body) global.document.body.appendChild(audioEl);
+			return audioEl;
+		}
+
+		async function connectPeer (ephemeralKey) {
+			peer = new RTCPeerConnection();
+			remoteStream = new MediaStream();
+			ensureAudioElement();
+
+			peer.ontrack = (event) => {
+				const stream = event.streams?.[0] || new MediaStream([event.track]);
+				remoteStream = stream;
+				audioEl.srcObject = stream;
+				audioEl.play().catch(() => {});
+				if (typeof config.onRemoteStream === "function") config.onRemoteStream(stream);
+			};
+
+			peer.onconnectionstatechange = () => {
+				if (!peer) return;
+				if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
+					connected = false;
+					config.onError("Realtime connection lost. Reconnecting…");
+					reconnect();
+				}
+			};
+
+			dataChannel = peer.createDataChannel("oai-events");
+			dataChannel.addEventListener("open", () => {
+				sendEvent({
+					type: "session.update",
+					session: {
+						type: "realtime",
+						instructions:
+							config.systemPrompt ||
+							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
+						audio: {
+							input: {
+								transcription: {
+									model: "gpt-4o-mini-transcribe"
+								},
+								turn_detection: {
+									type: "server_vad",
+									create_response: true,
+									interrupt_response: true,
+									silence_duration_ms: 400
+								}
+							}
+						}
+					}
+				});
+			});
+			dataChannel.addEventListener("message", (event) => {
+				try {
+					handleServerEvent(JSON.parse(event.data));
+				} catch {
+					// ignore malformed
+				}
+			});
+
+			const localTrack = localStream.getAudioTracks()[0];
+			rtcTrack = localTrack.clone();
+			rtcTrack.enabled = !wakeEnabled();
+			const rtcStream = new MediaStream([rtcTrack]);
+			peer.addTrack(rtcTrack, rtcStream);
+
+			const offer = await peer.createOffer();
+			await peer.setLocalDescription(offer);
+
+			const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+				method: "POST",
+				body: offer.sdp,
+				headers: {
+					Authorization: `Bearer ${ephemeralKey}`,
+					"Content-Type": "application/sdp"
+				}
+			});
+
+			if (!sdpResponse.ok) {
+				const errText = await sdpResponse.text();
+				throw new Error(errText || `Realtime SDP exchange failed (${sdpResponse.status})`);
+			}
+
+			const answer = {
+				type: "answer",
+				sdp: await sdpResponse.text()
+			};
+			await peer.setRemoteDescription(answer);
+			connected = true;
+
+			if (!wakeEnabled()) {
+				openConversationGate("");
+			} else {
+				closeConversationGate();
+			}
+		}
+
+		function destroyPeer () {
+			connected = false;
+			if (dataChannel) {
+				try {
+					dataChannel.close();
+				} catch {
+					// ignore
+				}
+				dataChannel = null;
+			}
+			if (peer) {
+				try {
+					peer.close();
+				} catch {
+					// ignore
+				}
+				peer = null;
+			}
+			if (rtcTrack) {
+				try {
+					rtcTrack.stop();
+				} catch {
+					// ignore
+				}
+				rtcTrack = null;
+			}
+			if (audioEl) {
+				audioEl.srcObject = null;
+			}
+			if (typeof config.onRemoteStream === "function") config.onRemoteStream(null);
+			remoteStream = null;
+		}
+
+		function requestToken () {
+			tokenRequestId += 1;
+			const requestId = `token-${tokenRequestId}-${Date.now()}`;
+			return new Promise((resolve, reject) => {
+				pendingTokenResolve = resolve;
+				pendingTokenReject = reject;
+				try {
+					config.requestToken(requestId);
+				} catch (error) {
+					pendingTokenResolve = null;
+					pendingTokenReject = null;
+					reject(error);
+				}
+				// Fail closed if the node helper never answers.
+				global.setTimeout(() => {
+					if (pendingTokenReject === reject) {
+						pendingTokenResolve = null;
+						pendingTokenReject = null;
+						reject(new Error("Timed out waiting for Realtime token."));
+					}
+				}, 15000);
+			});
+		}
+
+		function handleTokenResult (payload) {
+			if (!payload) return;
+			if (payload.error) {
+				if (pendingTokenReject) pendingTokenReject(new Error(payload.message || "Token error"));
+				pendingTokenResolve = null;
+				pendingTokenReject = null;
+				return;
+			}
+			if (pendingTokenResolve) pendingTokenResolve(payload);
+			pendingTokenResolve = null;
+			pendingTokenReject = null;
+		}
+
+		async function reconnect () {
+			if (!active || connecting) return;
+			connecting = true;
+			setStatus("Connecting live voice…");
+			try {
+				destroyPeer();
+				const token = await requestToken();
+				if (!token?.value) throw new Error("No ephemeral Realtime key returned.");
+				await connectPeer(token.value);
+				setStatus(wakeEnabled() ? `Say "${config.wakeWord}"` : "Listening…");
+			} catch (error) {
+				config.onError(error.message || "Could not connect Realtime voice.");
+			} finally {
+				connecting = false;
+			}
+		}
+
+		async function startMic () {
+			localStream = await navigator.mediaDevices.getUserMedia({
+				audio: {
+					echoCancellation: true,
+					noiseSuppression: true,
+					autoGainControl: true
+				},
+				video: false
+			});
+
+			audioContext = new (global.AudioContext || global.webkitAudioContext)();
+			const source = audioContext.createMediaStreamSource(localStream);
+			analyser = audioContext.createAnalyser();
+			analyser.fftSize = 2048;
+			source.connect(analyser);
+			if (audioContext.state === "suspended") {
+				await audioContext.resume();
+			}
+
+			if (vadTimer) global.clearInterval(vadTimer);
+			vadTimer = global.setInterval(tickVad, 80);
+		}
+
+		async function start () {
+			if (!supported) {
+				config.onError("Realtime voice requires getUserMedia + WebRTC in this browser.");
+				return;
+			}
+			active = true;
+			setMode("wake");
+			setStatus("Connecting live voice…");
+			try {
+				await startMic();
+				await reconnect();
+			} catch (error) {
+				active = false;
+				if (error && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
+					config.onError("Microphone permission denied. Allow mic access for live voice.");
+				} else {
+					config.onError(error.message || "Could not start live voice.");
+				}
+			}
+		}
+
+		function stop () {
+			active = false;
+			clearRemuteTimer();
+			if (vadTimer) {
+				global.clearInterval(vadTimer);
+				vadTimer = null;
+			}
+			if (recording && mediaRecorder) {
+				try {
+					mediaRecorder.onstop = null;
+					mediaRecorder.stop();
+				} catch {
+					// ignore
+				}
+			}
+			recording = false;
+			mediaRecorder = null;
+			sttInFlight = false;
+			destroyPeer();
+			if (localStream) {
+				localStream.getTracks().forEach((track) => track.stop());
+				localStream = null;
+			}
+			if (audioContext) {
+				audioContext.close().catch(() => {});
+				audioContext = null;
+			}
+			analyser = null;
+			if (audioEl && audioEl.parentNode) {
+				audioEl.parentNode.removeChild(audioEl);
+			}
+			audioEl = null;
+		}
+
+		function getMode () {
+			return mode;
+		}
+
+		return {
+			start,
+			stop,
+			handleSttResult,
+			handleTokenResult,
+			getMode,
+			matchWakeWord,
+			supported
+		};
+	}
+
+	global.MMM_AICharacterLib = global.MMM_AICharacterLib || {};
+	global.MMM_AICharacterLib.createRealtimeVoiceController = createRealtimeVoiceController;
+	global.MMM_AICharacterLib.matchWakeWord = matchWakeWord;
+})(typeof window !== "undefined" ? window : this);

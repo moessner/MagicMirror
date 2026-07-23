@@ -191,12 +191,25 @@ export class AvatarApp {
 
   stopAudio(): void {
     this.audio.stop();
+    this.audio.detachMediaStream();
+    this.lipSync.clearCues();
+  }
+
+  async attachStream(stream: MediaStream): Promise<void> {
+    await this.audio.resume();
+    this.lipSync.clearCues();
+    this.audio.attachMediaStream(stream);
+  }
+
+  detachStream(): void {
+    this.audio.detachMediaStream();
     this.lipSync.clearCues();
   }
 
   destroy(): void {
     this.running = false;
     this.audio.stop();
+    this.audio.detachMediaStream();
     this.app?.destroy(true);
     this.app = null;
   }

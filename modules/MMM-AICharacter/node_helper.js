@@ -1,25 +1,14 @@
 const NodeHelper = require("node_helper");
 const Log = require("logger");
 
-const DEFAULT_CHAT_MODEL = "gpt-4.1-mini";
+const DEFAULT_REALTIME_MODEL = "gpt-realtime";
+const DEFAULT_VOICE = "marin";
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 
 module.exports = NodeHelper.create({
 	start () {
 		this.instances = new Map();
-		this.activeRequests = new Map();
 		Log.log(`Starting node helper for: ${this.name}`);
-	},
-
-	stop () {
-		for (const controller of this.activeRequests.values()) {
-			try {
-				controller.abort();
-			} catch {
-				// ignore
-			}
-		}
-		this.activeRequests.clear();
 	},
 
 	requireOpenAiKey () {
@@ -31,19 +20,28 @@ module.exports = NodeHelper.create({
 
 		if (notification === "AI_CONFIG") {
 			this.instances.set(payload.instanceId, {
-				model: payload.model || DEFAULT_CHAT_MODEL,
+				realtimeModel: payload.realtimeModel || DEFAULT_REALTIME_MODEL,
+				voice: payload.voice || DEFAULT_VOICE,
 				transcriptionModel: payload.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL,
 				systemPrompt: payload.systemPrompt,
-				maxHistory: payload.maxHistory || 10,
 				characterName: payload.characterName || "Pixel",
-				voiceLang: payload.voiceLang || "en"
+				voiceLang: payload.voiceLang || "en",
+				wakeWord: payload.wakeWord || ""
 			});
 			this.sendSocketNotification("AI_CONFIG_OK", { instanceId: payload.instanceId });
 			return;
 		}
 
-		if (notification === "AI_CHAT_CANCEL") {
-			this.cancelRequest(payload.instanceId, payload.requestId);
+		if (notification === "AI_REALTIME_TOKEN") {
+			this.handleRealtimeToken(payload).catch((error) => {
+				Log.error(`${this.name} realtime token error: ${error.message}`);
+				this.sendSocketNotification("AI_REALTIME_TOKEN_RESULT", {
+					instanceId: payload.instanceId,
+					requestId: payload.requestId,
+					error: true,
+					message: error.message || "Failed to mint Realtime token"
+				});
+			});
 			return;
 		}
 
@@ -57,28 +55,85 @@ module.exports = NodeHelper.create({
 					message: error.message || "Transcription failed"
 				});
 			});
-			return;
-		}
-
-		if (notification === "AI_CHAT_SEND") {
-			this.handleChatSend(payload).catch((error) => {
-				Log.error(`${this.name} chat error: ${error.message}`);
-				this.sendSocketNotification("AI_CHAT_ERROR", {
-					instanceId: payload.instanceId,
-					requestId: payload.requestId,
-					message: error.message || "Chat request failed"
-				});
-			});
 		}
 	},
 
-	cancelRequest (instanceId, requestId) {
-		const key = `${instanceId}:${requestId}`;
-		const controller = this.activeRequests.get(key);
-		if (controller) {
-			controller.abort();
-			this.activeRequests.delete(key);
+	async handleRealtimeToken (payload) {
+		const { instanceId, requestId } = payload;
+		const settings = this.instances.get(instanceId) || {};
+
+		if (!this.requireOpenAiKey()) {
+			this.sendSocketNotification("AI_REALTIME_TOKEN_RESULT", {
+				instanceId,
+				requestId,
+				error: true,
+				message: "Missing OPENAI_API_KEY in the MagicMirror process environment."
+			});
+			return;
 		}
+
+		const model = settings.realtimeModel || DEFAULT_REALTIME_MODEL;
+		const voice = settings.voice || DEFAULT_VOICE;
+		const transcriptionModel = settings.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL;
+		const language = String(settings.voiceLang || "en").slice(0, 2);
+		const instructions =
+			settings.systemPrompt ||
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).";
+
+		const body = {
+			session: {
+				type: "realtime",
+				model,
+				instructions,
+				audio: {
+					input: {
+						transcription: {
+							model: transcriptionModel,
+							language
+						},
+						turn_detection: {
+							type: "server_vad",
+							threshold: 0.5,
+							prefix_padding_ms: 300,
+							silence_duration_ms: 400,
+							create_response: true,
+							interrupt_response: true
+						}
+					},
+					output: {
+						voice
+					}
+				}
+			}
+		};
+
+		const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify(body)
+		});
+
+		const data = await response.json().catch(() => ({}));
+		if (!response.ok) {
+			const detail = data?.error?.message || data?.message || `HTTP ${response.status}`;
+			throw new Error(detail);
+		}
+
+		if (!data?.value) {
+			throw new Error("Realtime client secret response missing value.");
+		}
+
+		this.sendSocketNotification("AI_REALTIME_TOKEN_RESULT", {
+			instanceId,
+			requestId,
+			value: data.value,
+			expiresAt: data.expires_at,
+			model,
+			voice
+		});
 	},
 
 	async handleTranscribe (payload) {
@@ -126,74 +181,5 @@ module.exports = NodeHelper.create({
 			text: transcript.text || "",
 			mimeType: mimeType || "audio/webm"
 		});
-	},
-
-	async handleChatSend (payload) {
-		const { instanceId, requestId, messages } = payload;
-		const settings = this.instances.get(instanceId) || {
-			model: DEFAULT_CHAT_MODEL,
-			systemPrompt: "You are a concise AI mirror companion.",
-			maxHistory: 10
-		};
-
-		if (!this.requireOpenAiKey()) {
-			this.sendSocketNotification("AI_CHAT_ERROR", {
-				instanceId,
-				requestId,
-				message: "Missing OPENAI_API_KEY in the MagicMirror process environment."
-			});
-			return;
-		}
-
-		this.cancelRequest(instanceId, requestId);
-
-		const controller = new AbortController();
-		const key = `${instanceId}:${requestId}`;
-		this.activeRequests.set(key, controller);
-
-		const { streamText } = await import("ai");
-		const { openai } = await import("@ai-sdk/openai");
-
-		const safeMessages = Array.isArray(messages)
-			? messages
-					.filter((m) => m && (m.role === "user" || m.role === "assistant") && m.content)
-					.slice(-(settings.maxHistory * 2))
-			: [];
-
-		try {
-			const result = streamText({
-				model: openai(settings.model || DEFAULT_CHAT_MODEL),
-				system: settings.systemPrompt,
-				messages: safeMessages,
-				abortSignal: controller.signal
-			});
-
-			let fullText = "";
-			for await (const delta of result.textStream) {
-				if (controller.signal.aborted) break;
-				fullText += delta;
-				this.sendSocketNotification("AI_CHAT_DELTA", {
-					instanceId,
-					requestId,
-					delta
-				});
-			}
-
-			if (controller.signal.aborted) return;
-
-			const finalText = (await result.text) || fullText;
-			this.sendSocketNotification("AI_CHAT_DONE", {
-				instanceId,
-				requestId,
-				text: finalText
-			});
-		} catch (error) {
-			if (controller.signal.aborted || error?.name === "AbortError") {
-				return;
-			}
-			throw error;
-		} finally {
-			this.activeRequests.delete(key);
-		}
 	}
 });

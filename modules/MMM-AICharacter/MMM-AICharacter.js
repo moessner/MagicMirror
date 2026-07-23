@@ -3,21 +3,20 @@
 Module.register("MMM-AICharacter", {
 	defaults: {
 		wakeWord: "hey mirror",
-		model: "gpt-4.1-mini",
+		realtimeModel: "gpt-realtime",
+		voice: "marin",
 		transcriptionModel: "gpt-4o-mini-transcribe",
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
 			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions.",
-		maxHistory: 10,
-		silenceMs: 1500,
 		postSpeakListenMs: 8000,
-		enableTTS: true,
+		wakeSilenceMs: 700,
 		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
 	getScripts () {
-		return [this.file("lib/conversation.js"), this.file("lib/voice.js")];
+		return [this.file("lib/conversation.js"), this.file("lib/realtimeVoice.js")];
 	},
 
 	getStyles () {
@@ -35,8 +34,10 @@ Module.register("MMM-AICharacter", {
 		this.conversation = null;
 		this.voice = null;
 		this.uiState = "idle";
-		this.requestCounter = 0;
 		this.avatarReady = false;
+		this.pendingRemoteStream = null;
+		this.avatarStreamRetries = 0;
+		this.pendingTokenRequestId = null;
 	},
 
 	getDom () {
@@ -55,6 +56,9 @@ Module.register("MMM-AICharacter", {
 		iframe.addEventListener("load", () => {
 			this.avatarReady = true;
 			this.postAvatar({ type: "avatar:setState", state: "idle" });
+			if (this.pendingRemoteStream) {
+				this.attachAvatarStream(this.pendingRemoteStream);
+			}
 		});
 		this.iframe = iframe;
 		stage.appendChild(iframe);
@@ -64,7 +68,9 @@ Module.register("MMM-AICharacter", {
 
 		const statusEl = document.createElement("div");
 		statusEl.className = "mmm-ai-character__status";
-		statusEl.textContent = `Say "${this.config.wakeWord || "hey mirror"}"`;
+		statusEl.textContent = this.config.wakeWord
+			? `Say "${this.config.wakeWord}"`
+			: "Connecting live voice…";
 
 		const userEl = document.createElement("div");
 		userEl.className = "mmm-ai-character__user";
@@ -80,7 +86,7 @@ Module.register("MMM-AICharacter", {
 		root.appendChild(captions);
 
 		const lib = (typeof MMM_AICharacterLib !== "undefined" && MMM_AICharacterLib) || null;
-		if (!lib || !lib.createConversation || !lib.createVoiceController) {
+		if (!lib || !lib.createConversation || !lib.createRealtimeVoiceController) {
 			statusEl.textContent = "Voice scripts failed to load.";
 			root.classList.add("mmm-ai-character--error");
 			return root;
@@ -92,16 +98,19 @@ Module.register("MMM-AICharacter", {
 			statusEl
 		});
 
-		this.voice = lib.createVoiceController({
+		this.voice = lib.createRealtimeVoiceController({
 			wakeWord: this.config.wakeWord,
-			lang: this.config.voiceLang,
-			silenceMs: this.config.silenceMs,
+			systemPrompt: this.config.systemPrompt,
+			characterName: this.config.characterName,
 			postSpeakListenMs: this.config.postSpeakListenMs,
-			onState: (mode) => this.handleVoiceMode(mode),
-			onPartial: (text, mode) => this.handlePartial(text, mode),
-			onUtterance: (text) => this.handleUtterance(text),
-			onBargeIn: () => this.handleBargeIn(),
-			onError: (message) => this.handleVoiceError(message),
+			wakeSilenceMs: this.config.wakeSilenceMs,
+			requestToken: (requestId) => {
+				this.pendingTokenRequestId = requestId;
+				this.sendSocketNotification("AI_REALTIME_TOKEN", {
+					instanceId: this.identifier,
+					requestId
+				});
+			},
 			onTranscribeRequest: (audioPayload) => {
 				this.sendSocketNotification("AI_STT_TRANSCRIBE", {
 					instanceId: this.identifier,
@@ -109,28 +118,44 @@ Module.register("MMM-AICharacter", {
 					audioBase64: audioPayload.audioBase64,
 					mimeType: audioPayload.mimeType
 				});
-			}
+			},
+			onState: (mode) => this.handleVoiceMode(mode),
+			onStatus: (text) => this.conversation.setStatus(text),
+			onUserCaption: (text) => this.conversation.setUserCaption(text),
+			onAssistantCaption: (text) => this.conversation.setAssistantCaption(text),
+			onAssistantDelta: (delta) => {
+				this.conversation.appendAssistantDelta(delta);
+				this.setUiState("speaking");
+			},
+			onRemoteStream: (stream) => this.attachAvatarStream(stream),
+			onError: (message) => this.handleVoiceError(message)
 		});
 
 		if (!this.voice.supported) {
 			this.setUiState("error");
-			this.conversation.setStatus("Microphone unavailable in this browser");
+			this.conversation.setStatus("Realtime voice unavailable in this browser");
 		} else {
-			this.voice.start();
-			this.conversation.setStatus(`Say "${this.config.wakeWord}"`);
+			this.conversation.setStatus("Connecting live voice…");
 		}
 
 		this.sendSocketNotification("AI_CONFIG", {
 			instanceId: this.identifier,
-			model: this.config.model,
+			realtimeModel: this.config.realtimeModel,
+			voice: this.config.voice,
 			transcriptionModel: this.config.transcriptionModel,
 			systemPrompt: this.config.systemPrompt,
-			maxHistory: this.config.maxHistory,
 			characterName: this.config.characterName,
-			voiceLang: this.config.voiceLang
+			voiceLang: this.config.voiceLang,
+			wakeWord: this.config.wakeWord
 		});
 
 		return root;
+	},
+
+	notificationReceived (notification) {
+		if (notification === "DOM_OBJECTS_CREATED" && this.voice && this.voice.supported) {
+			this.voice.start();
+		}
 	},
 
 	postAvatar (message) {
@@ -138,8 +163,31 @@ Module.register("MMM-AICharacter", {
 		this.iframe.contentWindow.postMessage(message, "*");
 	},
 
+	attachAvatarStream (stream) {
+		this.pendingRemoteStream = stream || null;
+		const win = this.iframe && this.iframe.contentWindow;
+		if (!win) return;
+		const api = win.__MMMAvatar;
+		if (!api) {
+			if (!stream || this.avatarStreamRetries > 25) return;
+			this.avatarStreamRetries += 1;
+			// Avatar boot is async; retry shortly after iframe load.
+			setTimeout(() => {
+				if (this.pendingRemoteStream === stream) this.attachAvatarStream(stream);
+			}, 200);
+			return;
+		}
+		this.avatarStreamRetries = 0;
+		if (stream && typeof api.attachStream === "function") {
+			api.attachStream(stream);
+		} else if (!stream && typeof api.detachStream === "function") {
+			api.detachStream();
+		}
+	},
+
 	suspend () {
 		if (this.voice) this.voice.stop();
+		this.attachAvatarStream(null);
 		this.postAvatar({ type: "avatar:setState", state: "dormant" });
 	},
 
@@ -171,14 +219,14 @@ Module.register("MMM-AICharacter", {
 	handleVoiceMode (mode) {
 		if (mode === "wake") {
 			this.setUiState("idle");
-			if (this.conversation && !this.conversation.getCurrentRequestId()) {
-				this.conversation.setStatus(`Say "${this.config.wakeWord}"`);
-			}
 			return;
 		}
 		if (mode === "listening") {
 			this.setUiState("listening");
-			this.conversation.setStatus("Listening…");
+			return;
+		}
+		if (mode === "thinking") {
+			this.setUiState("thinking");
 			return;
 		}
 		if (mode === "speaking") {
@@ -186,112 +234,30 @@ Module.register("MMM-AICharacter", {
 		}
 	},
 
-	handlePartial (text, mode) {
-		if (!text) return;
-		if (text === "Transcribing…" || text === "Heard you…" || text === "Listening…") {
-			this.conversation.setStatus(text);
-			return;
-		}
-		if (mode === "listening") {
-			this.conversation.setUserCaption(text);
-			this.conversation.setStatus("Listening…");
-			return;
-		}
-		if (mode === "wake") {
-			this.conversation.setStatus(text);
-		}
-	},
-
-	handleUtterance (text) {
-		const cleaned = String(text || "").trim();
-		if (!cleaned) return;
-
-		this.requestCounter += 1;
-		const requestId = `${this.identifier}-${this.requestCounter}-${Date.now()}`;
-		this.conversation.beginRequest(requestId, cleaned);
-		this.conversation.pushHistory(this.config.maxHistory, { role: "user", content: cleaned });
-		this.setUiState("thinking");
-
-		const messages = this.conversation.getHistory();
-		this.sendSocketNotification("AI_CHAT_SEND", {
-			instanceId: this.identifier,
-			requestId,
-			messages
-		});
-	},
-
-	handleBargeIn () {
-		const requestId = this.conversation.getCurrentRequestId();
-		if (this.voice) this.voice.stopSpeaking();
-		this.postAvatar({ type: "avatar:stopAudio" });
-		if (requestId) {
-			this.sendSocketNotification("AI_CHAT_CANCEL", {
-				instanceId: this.identifier,
-				requestId
-			});
-			this.conversation.clearRequest();
-		}
-		this.setUiState("listening");
-		this.conversation.setStatus("Listening…");
-	},
-
 	handleVoiceError (message) {
 		Log.error(`${this.name}: ${message}`);
 		this.setUiState("error");
-		this.conversation.setStatus(message);
-	},
-
-	speakReply (text) {
-		const finish = () => {
-			if (this.voice) this.voice.armPostReplyListen();
-			this.conversation.setStatus(`Say "${this.config.wakeWord}" or keep talking`);
-			this.setUiState("idle");
-		};
-
-		if (!this.config.enableTTS || !this.voice) {
-			finish();
-			return;
-		}
-		this.setUiState("speaking");
-		this.voice.speak(text, finish);
+		if (this.conversation) this.conversation.setStatus(message);
 	},
 
 	socketNotificationReceived (notification, payload) {
 		if (!payload || payload.instanceId !== this.identifier) return;
+
+		if (notification === "AI_REALTIME_TOKEN_RESULT") {
+			if (this.voice) this.voice.handleTokenResult(payload);
+			return;
+		}
 
 		if (notification === "AI_STT_RESULT") {
 			if (this.voice) this.voice.handleSttResult(payload);
 			return;
 		}
 
-		if (notification === "AI_CHAT_DELTA") {
-			if (!this.conversation.isCurrent(payload.requestId)) return;
-			this.conversation.appendAssistantDelta(payload.delta);
-			this.setUiState("speaking");
-			return;
-		}
-
-		if (notification === "AI_CHAT_DONE") {
-			if (!this.conversation.isCurrent(payload.requestId)) return;
-			const text = payload.text || this.conversation.getAssistantText();
-			this.conversation.setAssistantCaption(text);
-			this.conversation.pushHistory(this.config.maxHistory, { role: "assistant", content: text });
-			this.conversation.clearRequest();
-			this.speakReply(text);
-			return;
-		}
-
-		if (notification === "AI_CHAT_ERROR") {
-			if (payload.requestId && !this.conversation.isCurrent(payload.requestId)) return;
-			this.conversation.clearRequest();
-			this.setUiState("error");
-			this.conversation.setStatus(payload.message || "Something went wrong");
-			if (this.voice) this.voice.markIdleWake();
-			return;
-		}
-
 		if (notification === "AI_CONFIG_OK") {
-			this.conversation.setStatus(`Say "${this.config.wakeWord}"`);
+			const prompt = this.config.wakeWord
+				? `Say "${this.config.wakeWord}"`
+				: "Live voice ready";
+			if (this.conversation) this.conversation.setStatus(prompt);
 		}
 	}
 });

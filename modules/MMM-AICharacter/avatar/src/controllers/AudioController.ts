@@ -4,12 +4,14 @@
 export class AudioController {
   readonly context: AudioContext;
   private source: AudioBufferSourceNode | null = null;
+  private streamSource: MediaStreamAudioSourceNode | null = null;
   private analyser: AnalyserNode;
   private gain: GainNode;
   private freqData: Uint8Array<ArrayBuffer>;
   private timeData: Uint8Array<ArrayBuffer>;
   private startedAt = 0;
   private playing = false;
+  private streamAttached = false;
   private onEnded: (() => void) | null = null;
 
   constructor(fftSize = 2048, smoothing = 0.75) {
@@ -36,7 +38,46 @@ export class AudioController {
   }
 
   get isPlaying(): boolean {
-    return this.playing;
+    return this.playing || this.streamAttached;
+  }
+
+  /**
+   * Tap a live MediaStream (e.g. WebRTC remote audio) for analyser lip-sync.
+   * Playback stays on the caller's <audio> element; this path is silent.
+   */
+  attachMediaStream(stream: MediaStream): void {
+    this.stop();
+    this.detachMediaStream();
+    void this.resume();
+    // Mute Web Audio speakers while the HTMLAudioElement plays the remote stream.
+    try {
+      this.analyser.disconnect(this.context.destination);
+    } catch {
+      // already disconnected
+    }
+    this.streamSource = this.context.createMediaStreamSource(stream);
+    this.streamSource.connect(this.analyser);
+    this.streamAttached = true;
+    this.startedAt = this.context.currentTime;
+  }
+
+  detachMediaStream(): void {
+    if (this.streamSource) {
+      try {
+        this.streamSource.disconnect();
+      } catch {
+        // ignore
+      }
+      this.streamSource = null;
+    }
+    if (this.streamAttached) {
+      try {
+        this.analyser.connect(this.context.destination);
+      } catch {
+        // already connected
+      }
+    }
+    this.streamAttached = false;
   }
 
   async loadUrl(url: string): Promise<AudioBuffer> {
@@ -78,6 +119,7 @@ export class AudioController {
       this.source = null;
     }
     this.playing = false;
+    // Keep live stream taps unless explicitly detached.
   }
 
   /** Seconds since this clip started, in AudioContext time. */

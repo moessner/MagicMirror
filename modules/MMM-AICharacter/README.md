@@ -2,24 +2,25 @@
 
 Hands-free holographic AI companion for [MagicMirror²](https://magicmirror.builders).
 
-Speak a wake word (default **hey mirror**), ask a question, and the avatar answers aloud. No buttons — designed for a mirror kiosk.
+Speak a wake word (default **hey mirror**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
 
 The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar/) — see [`avatar/LAYER_PLAN.md`](./avatar/LAYER_PLAN.md) and [`avatar/README.md`](./avatar/README.md).
 
 ## Features
 
 - Holographic source-plate avatar with blink, hair wind, scanlines, particles, lip-sync
-- Continuous microphone listening with wake-word gating (local VAD, no buttons)
-- Server-side speech-to-text via OpenAI (`gpt-4o-mini-transcribe`)
-- Silence-based end of turn (~1.5s)
-- Barge-in while the character is speaking
-- Streaming replies via OpenAI (`gpt-4.1-mini` by default)
+- OpenAI Realtime WebRTC session (mic → model → natural voice audio)
+- Wake-word gate (local short STT) so the always-on mirror stays private until addressed
+- Server VAD turn-taking + native barge-in
+- Streaming captions from Realtime transcripts
+- Analyser-driven lip sync from the live remote audio stream
 
 ## Requirements
 
 - MagicMirror² with Node `>= 22.21.1`
 - Microphone permission in the browser / Electron kiosk
 - Environment variable: `OPENAI_API_KEY`
+- Network access from the browser to `api.openai.com` (WebRTC)
 
 ## Install
 
@@ -48,20 +49,28 @@ const aiCharacterModule = {
   module: "MMM-AICharacter",
   position: "middle_center",
   config: {
-    wakeWord: "hey mirror",
-    model: "gpt-4.1-mini",
+    wakeWord: "hey mirror", // set "" for always-open live mode
+    realtimeModel: "gpt-realtime",
+    voice: "marin",
     transcriptionModel: "gpt-4o-mini-transcribe",
     voiceLang: "en-US",
     characterName: "Pixel",
     systemPrompt: "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
-    maxHistory: 10,
-    silenceMs: 1500,
     postSpeakListenMs: 8000,
-    enableTTS: true,
+    wakeSilenceMs: 700,
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
 ```
+
+| Option | Default | Notes |
+|--------|---------|--------|
+| `wakeWord` | `"hey mirror"` | Empty string disables wake gating (always live) |
+| `realtimeModel` | `"gpt-realtime"` | OpenAI Realtime speech-to-speech model |
+| `voice` | `"marin"` | Realtime output voice (`marin`, `cedar`, etc.) |
+| `transcriptionModel` | `"gpt-4o-mini-transcribe"` | Used for wake-word STT + Realtime input captions |
+| `postSpeakListenMs` | `8000` | Follow-up window without repeating the wake word |
+| `wakeSilenceMs` | `700` | End-of-clip silence for wake-word detection only |
 
 Start MagicMirror with the OpenAI key available to the process:
 
@@ -73,16 +82,16 @@ npm run server
 
 ## Hands-free flow
 
-1. Module continuously listens.
+1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake).
 2. Say the wake word (default `hey mirror`).
-3. Ask your question; after a short silence, the turn is sent.
-4. Captions stream while the avatar speaks the reply.
+3. Speak naturally; server VAD ends your turn and the model answers with live audio.
+4. Captions stream while the avatar lip-syncs to the remote voice.
 5. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
-6. Interrupt anytime by speaking over the reply (barge-in).
+6. Interrupt anytime by speaking over the reply (Realtime barge-in).
 
 ## Notes
 
-- API keys must stay in the host environment — never put `OPENAI_API_KEY` in client config.
-- Speech recognition does **not** use the browser Web Speech API (that often fails with `network` errors). Audio is captured locally and transcribed on the server.
+- API keys stay on the host: the browser receives only short-lived ephemeral Realtime client secrets.
+- Conversation audio no longer uses the browser Web Speech API.
 - Allow microphone access for the MagicMirror page / Electron kiosk.
 - Server mode (`npm run server`) needs a browser that can access the mic on the page origin (HTTPS or localhost).
