@@ -418,9 +418,46 @@
 			openConversationGate(wake.remainder);
 		}
 
+		let pendingFunctionCalls = 0;
+
 		function sendEvent (event) {
 			if (!dataChannel || dataChannel.readyState !== "open") return;
 			dataChannel.send(JSON.stringify(event));
+		}
+
+		function sendFunctionOutput (callId, outputObject) {
+			const output =
+				typeof outputObject === "string" ? outputObject : JSON.stringify(outputObject ?? {});
+			sendEvent({
+				type: "conversation.item.create",
+				item: {
+					type: "function_call_output",
+					call_id: callId,
+					output
+				}
+			});
+			if (pendingFunctionCalls > 0) pendingFunctionCalls -= 1;
+			sendEvent({ type: "response.create" });
+		}
+
+		function handleFunctionCallDone (event) {
+			const name = event.name || "";
+			const callId = event.call_id || event.callId;
+			let args = {};
+			try {
+				args = event.arguments ? JSON.parse(event.arguments) : {};
+			} catch {
+				args = {};
+			}
+			pendingFunctionCalls += 1;
+			clearRemuteTimer();
+			setMode("thinking");
+			setStatus("Fetching…");
+			if (typeof config.onFunctionCall === "function") {
+				config.onFunctionCall({ name, callId, arguments: args });
+			} else {
+				sendFunctionOutput(callId, { error: true, message: "No function handler registered." });
+			}
 		}
 
 		function handleServerEvent (event) {
@@ -458,6 +495,9 @@
 					setMode("thinking");
 					setStatus("Thinking…");
 					break;
+				case "response.function_call_arguments.done":
+					handleFunctionCallDone(event);
+					break;
 				case "response.output_audio_transcript.delta":
 				case "response.audio_transcript.delta":
 					if (event.delta) {
@@ -479,6 +519,11 @@
 					break;
 				case "output_audio_buffer.stopped":
 				case "response.done":
+					if (pendingFunctionCalls > 0) {
+						setMode("thinking");
+						setStatus("Fetching…");
+						break;
+					}
 					setMode("listening");
 					setStatus("Listening…");
 					scheduleRemute();
@@ -531,7 +576,27 @@
 						type: "realtime",
 						instructions:
 							config.systemPrompt ||
-							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
+							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers.",
+						tools: [
+							{
+								type: "function",
+								name: "get_weather",
+								description:
+									"Fetch current weather and a short daily forecast. Call this whenever the user asks about weather, temperature, or the forecast. Omit location to use the device coordinates.",
+								parameters: {
+									type: "object",
+									properties: {
+										location: {
+											type: "string",
+											description: "Optional city or place name. Omit to use the device location."
+										}
+									},
+									required: [],
+									additionalProperties: false
+								}
+							}
+						],
+						tool_choice: "auto",
 						audio: {
 							input: {
 								transcription: {
@@ -595,6 +660,7 @@
 
 		function destroyPeer () {
 			connected = false;
+			pendingFunctionCalls = 0;
 			if (dataChannel) {
 				try {
 					dataChannel.close();
@@ -767,6 +833,7 @@
 			stop,
 			handleSttResult,
 			handleTokenResult,
+			sendFunctionOutput,
 			getMode,
 			matchWakeWord,
 			supported

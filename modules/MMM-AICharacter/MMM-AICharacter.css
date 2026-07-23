@@ -51,7 +51,8 @@
 }
 
 .mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__user,
-.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant {
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant,
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__weather {
   display: none;
 }
 
@@ -102,4 +103,89 @@
 
 .mmm-ai-character--error .mmm-ai-character__status {
   color: #ff8ad8;
+}
+
+.mmm-ai-character__weather {
+  margin-top: 0.35rem;
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid rgba(120, 200, 255, 0.28);
+  border-radius: 0.85rem;
+  background: linear-gradient(160deg, rgba(12, 36, 58, 0.72), rgba(8, 18, 32, 0.55));
+  box-shadow: 0 0 24px rgba(80, 180, 255, 0.12);
+  animation: mmm-ai-weather-in 0.45s ease;
+}
+
+.mmm-ai-character__weather-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.mmm-ai-character__weather-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+  color: #9fdfff;
+  text-shadow: 0 0 14px rgba(120, 210, 255, 0.45);
+}
+
+.mmm-ai-character__weather-now {
+  text-align: left;
+}
+
+.mmm-ai-character__weather-temp {
+  font-size: 1.85rem;
+  font-weight: 500;
+  line-height: 1.1;
+  color: #e8ffff;
+}
+
+.mmm-ai-character__weather-place {
+  font-size: 0.95rem;
+  color: rgba(215, 244, 255, 0.85);
+}
+
+.mmm-ai-character__weather-condition {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: rgba(199, 125, 255, 0.95);
+}
+
+.mmm-ai-character__weather-days {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(140, 200, 255, 0.18);
+}
+
+.mmm-ai-character__weather-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: rgba(215, 244, 255, 0.8);
+}
+
+.mmm-ai-character__weather-day .wi {
+  font-size: 1.25rem;
+  color: #9fdfff;
+}
+
+.mmm-ai-character__weather-day-temps {
+  white-space: nowrap;
+}
+
+@keyframes mmm-ai-weather-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
