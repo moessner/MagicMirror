@@ -10,7 +10,7 @@ Module.register("MMM-AICharacter", {
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers. Call get_weather again on every weather question, even if you already answered weather earlier in the session.",
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers. Call get_weather again on every weather question, even if you already answered weather earlier in the session. When asked about news, headlines, current events, or Schlagzeilen, always call get_news first, then summarize briefly from the tool result — never invent headlines. Call get_news again on every news question, even if you already answered news earlier in the session.",
 		postSpeakListenMs: 8000,
 		wakeSilenceMs: 550,
 		vadThreshold: 0.015,
@@ -21,6 +21,14 @@ Module.register("MMM-AICharacter", {
 		lon: null,
 		units: "metric",
 		showWeatherCard: true,
+		showNewsCard: true,
+		newsLimit: 5,
+		newsFeeds: [
+			{
+				title: "Tagesschau",
+				url: "https://www.tagesschau.de/xml/rss2/"
+			}
+		],
 		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
@@ -55,7 +63,9 @@ Module.register("MMM-AICharacter", {
 		this.avatarStreamRetries = 0;
 		this.pendingTokenRequestId = null;
 		this.weatherEl = null;
+		this.newsEl = null;
 		this.pendingWeather = new Map();
+		this.pendingNews = new Map();
 		this.cachedGeo = null;
 	},
 
@@ -103,10 +113,16 @@ Module.register("MMM-AICharacter", {
 		weatherEl.hidden = true;
 		this.weatherEl = weatherEl;
 
+		const newsEl = document.createElement("div");
+		newsEl.className = "mmm-ai-character__news";
+		newsEl.hidden = true;
+		this.newsEl = newsEl;
+
 		captions.appendChild(statusEl);
 		captions.appendChild(userEl);
 		captions.appendChild(assistantEl);
 		captions.appendChild(weatherEl);
+		captions.appendChild(newsEl);
 
 		root.appendChild(stage);
 		root.appendChild(captions);
@@ -176,7 +192,9 @@ Module.register("MMM-AICharacter", {
 			characterName: this.config.characterName,
 			voiceLang: this.config.voiceLang,
 			wakeWord: this.config.wakeWord,
-			units: this.config.units
+			units: this.config.units,
+			newsFeeds: this.config.newsFeeds,
+			newsLimit: this.config.newsLimit
 		});
 
 		return root;
@@ -251,6 +269,7 @@ Module.register("MMM-AICharacter", {
 			this.postAvatar({ type: "avatar:setState", state: "dormant" });
 			if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--present");
 			this.clearWeatherCard();
+			this.clearNewsCard();
 			return;
 		}
 		// Keep --present until the fade finishes so the stage doesn't collapse mid-animation.
@@ -267,6 +286,7 @@ Module.register("MMM-AICharacter", {
 				this.conversation.setAssistantCaption("");
 			}
 			this.clearWeatherCard();
+			this.clearNewsCard();
 		}, 1300);
 	},
 
@@ -277,6 +297,23 @@ Module.register("MMM-AICharacter", {
 		weatherEl.setAttribute("hidden", "hidden");
 		weatherEl.innerHTML = "";
 		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--weather");
+	},
+
+	clearNewsCard () {
+		const newsEl = this.ensureNewsElement();
+		if (!newsEl) return;
+		newsEl.hidden = true;
+		newsEl.setAttribute("hidden", "hidden");
+		newsEl.innerHTML = "";
+		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--news");
+	},
+
+	escapeHtml (value) {
+		return String(value ?? "")
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;");
 	},
 
 	formatDayLabel (dateStr) {
@@ -302,6 +339,8 @@ Module.register("MMM-AICharacter", {
 		const weatherEl = this.ensureWeatherElement();
 		if (!this.config.showWeatherCard || !weatherEl || !data || data.error) return;
 
+		this.clearNewsCard();
+
 		// A pending dematerialize would clear the card right after a follow-up ask.
 		if (this.vanishTimer) {
 			this.clearAppearVanishTimers();
@@ -316,8 +355,8 @@ Module.register("MMM-AICharacter", {
 				: "wi wi-na";
 		const temp = Math.round(Number(data.current?.temperature));
 		const symbol = data.tempSymbol || "°";
-		const place = data.place || "";
-		const condition = data.current?.condition || "";
+		const place = this.escapeHtml(data.place || "");
+		const condition = this.escapeHtml(data.current?.condition || "");
 
 		const days = (data.daily || [])
 			.map((day) => {
@@ -328,7 +367,7 @@ Module.register("MMM-AICharacter", {
 				const hi = Math.round(Number(day.tempMax));
 				const lo = Math.round(Number(day.tempMin));
 				return `<div class="mmm-ai-character__weather-day">
-					<span class="mmm-ai-character__weather-day-name">${this.formatDayLabel(day.date)}</span>
+					<span class="mmm-ai-character__weather-day-name">${this.escapeHtml(this.formatDayLabel(day.date))}</span>
 					<i class="${dayIcon}" aria-hidden="true"></i>
 					<span class="mmm-ai-character__weather-day-temps">${hi}${symbol}/${lo}${symbol}</span>
 				</div>`;
@@ -350,6 +389,59 @@ Module.register("MMM-AICharacter", {
 		weatherEl.removeAttribute("hidden");
 		if (this.wrapper) {
 			this.wrapper.classList.add("mmm-ai-character--weather");
+			if (this.avatarVisible || !this.wakeGatedAppearance()) {
+				this.wrapper.classList.add("mmm-ai-character--present");
+			}
+		}
+	},
+
+	ensureNewsElement () {
+		if (this.newsEl && this.wrapper && this.wrapper.contains(this.newsEl)) {
+			return this.newsEl;
+		}
+		if (this.wrapper) {
+			this.newsEl = this.wrapper.querySelector(".mmm-ai-character__news");
+		}
+		return this.newsEl;
+	},
+
+	showNewsCard (data) {
+		const newsEl = this.ensureNewsElement();
+		if (!this.config.showNewsCard || !newsEl || !data || data.error) return;
+
+		this.clearWeatherCard();
+
+		// A pending dematerialize would clear the card right after a follow-up ask.
+		if (this.vanishTimer) {
+			this.clearAppearVanishTimers();
+			this.avatarVisible = true;
+			if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--present");
+		}
+
+		const headlines = Array.isArray(data.headlines) ? data.headlines : [];
+		const items = headlines
+			.map((item) => {
+				const source = this.escapeHtml(item.source || "");
+				const title = this.escapeHtml(item.title || "");
+				return `<div class="mmm-ai-character__news-item">
+					<span class="mmm-ai-character__news-source">${source}</span>
+					<span class="mmm-ai-character__news-title">${title}</span>
+				</div>`;
+			})
+			.join("");
+
+		const heading = data.topic
+			? `Schlagzeilen · ${this.escapeHtml(data.topic)}`
+			: "Schlagzeilen";
+
+		newsEl.innerHTML = `
+			<div class="mmm-ai-character__news-heading">${heading}</div>
+			<div class="mmm-ai-character__news-list">${items}</div>
+		`;
+		newsEl.hidden = false;
+		newsEl.removeAttribute("hidden");
+		if (this.wrapper) {
+			this.wrapper.classList.add("mmm-ai-character--news");
 			if (this.avatarVisible || !this.wakeGatedAppearance()) {
 				this.wrapper.classList.add("mmm-ai-character--present");
 			}
@@ -396,6 +488,12 @@ Module.register("MMM-AICharacter", {
 
 	async handleFunctionCall (call) {
 		if (!call || !call.callId) return;
+
+		if (call.name === "get_news") {
+			await this.handleNewsFunctionCall(call);
+			return;
+		}
+
 		if (call.name !== "get_weather") {
 			if (this.voice) {
 				this.voice.sendFunctionOutput(call.callId, {
@@ -443,6 +541,35 @@ Module.register("MMM-AICharacter", {
 		}
 	},
 
+	async handleNewsFunctionCall (call) {
+		// Keep the hologram up while news is fetched/rendered.
+		if (this.wakeGatedAppearance()) {
+			this.materializeAvatar("thinking");
+		}
+
+		const requestId = `news_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+		this.pendingNews.set(requestId, call.callId);
+
+		try {
+			this.sendSocketNotification("AI_NEWS_FETCH", {
+				instanceId: this.identifier,
+				requestId,
+				callId: call.callId,
+				topic: call.arguments?.topic,
+				feeds: this.config.newsFeeds,
+				limit: this.config.newsLimit
+			});
+		} catch (error) {
+			this.pendingNews.delete(requestId);
+			if (this.voice) {
+				this.voice.sendFunctionOutput(call.callId, {
+					error: true,
+					message: error.message || "News lookup failed"
+				});
+			}
+		}
+	},
+
 	suspend () {
 		if (this.voice) this.voice.stop();
 		this.attachAvatarStream(null);
@@ -464,9 +591,10 @@ Module.register("MMM-AICharacter", {
 		if (this.wrapper) {
 			const present = this.avatarVisible || !this.wakeGatedAppearance();
 			const weatherOpen = Boolean(this.weatherEl && !this.weatherEl.hidden);
+			const newsOpen = Boolean(this.newsEl && !this.newsEl.hidden);
 			this.wrapper.className = `mmm-ai-character mmm-ai-character--${shellState}${
 				present ? " mmm-ai-character--present" : ""
-			}${weatherOpen ? " mmm-ai-character--weather" : ""}`;
+			}${weatherOpen ? " mmm-ai-character--weather" : ""}${newsOpen ? " mmm-ai-character--news" : ""}`;
 		}
 
 		const gated = this.wakeGatedAppearance();
@@ -547,6 +675,27 @@ Module.register("MMM-AICharacter", {
 			}
 
 			this.showWeatherCard(payload);
+			if (this.voice && callId) {
+				this.voice.sendFunctionOutput(callId, payload.summary || payload);
+			}
+			return;
+		}
+
+		if (notification === "AI_NEWS_RESULT") {
+			const callId = payload.callId || this.pendingNews.get(payload.requestId);
+			if (payload.requestId) this.pendingNews.delete(payload.requestId);
+
+			if (payload.error) {
+				if (this.voice && callId) {
+					this.voice.sendFunctionOutput(callId, {
+						error: true,
+						message: payload.message || "News fetch failed"
+					});
+				}
+				return;
+			}
+
+			this.showNewsCard(payload);
 			if (this.voice && callId) {
 				this.voice.sendFunctionOutput(callId, payload.summary || payload);
 			}

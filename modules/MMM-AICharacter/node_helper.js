@@ -1,6 +1,7 @@
 const NodeHelper = require("node_helper");
 const Log = require("logger");
 const { fetchWeather } = require("./lib/weatherFetch");
+const { DEFAULT_FEEDS, fetchNews } = require("./lib/newsFetch");
 
 const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "sage";
@@ -17,6 +18,24 @@ const GET_WEATHER_TOOL = {
 			location: {
 				type: "string",
 				description: "Optional city or place name. Omit to use the device location."
+			}
+		},
+		required: [],
+		additionalProperties: false
+	}
+};
+
+const GET_NEWS_TOOL = {
+	type: "function",
+	name: "get_news",
+	description:
+		"Fetch current news headlines (Schlagzeilen). Call this whenever the user asks about news, headlines, current events, or Schlagzeilen. Optionally pass a topic keyword to filter.",
+	parameters: {
+		type: "object",
+		properties: {
+			topic: {
+				type: "string",
+				description: "Optional topic or keyword to filter headlines (e.g. politics, sport, Klima)."
 			}
 		},
 		required: [],
@@ -46,7 +65,9 @@ module.exports = NodeHelper.create({
 				characterName: payload.characterName || "Pixel",
 				voiceLang: payload.voiceLang || "en",
 				wakeWord: payload.wakeWord || "",
-				units: payload.units || "metric"
+				units: payload.units || "metric",
+				newsFeeds: Array.isArray(payload.newsFeeds) ? payload.newsFeeds : DEFAULT_FEEDS,
+				newsLimit: payload.newsLimit || 5
 			});
 			this.sendSocketNotification("AI_CONFIG_OK", { instanceId: payload.instanceId });
 			return;
@@ -74,6 +95,20 @@ module.exports = NodeHelper.create({
 					callId: payload.callId,
 					error: true,
 					message: error.message || "Weather fetch failed"
+				});
+			});
+			return;
+		}
+
+		if (notification === "AI_NEWS_FETCH") {
+			this.handleNewsFetch(payload).catch((error) => {
+				Log.error(`${this.name} news fetch error: ${error.message}`);
+				this.sendSocketNotification("AI_NEWS_RESULT", {
+					instanceId: payload.instanceId,
+					requestId: payload.requestId,
+					callId: payload.callId,
+					error: true,
+					message: error.message || "News fetch failed"
 				});
 			});
 			return;
@@ -112,14 +147,14 @@ module.exports = NodeHelper.create({
 		const language = String(settings.voiceLang || "en").slice(0, 2);
 		const instructions =
 			settings.systemPrompt ||
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).";
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather. When asked about news, headlines, or Schlagzeilen, call get_news.";
 
 		const body = {
 			session: {
 				type: "realtime",
 				model,
 				instructions,
-				tools: [GET_WEATHER_TOOL],
+				tools: [GET_WEATHER_TOOL, GET_NEWS_TOOL],
 				tool_choice: "auto",
 				audio: {
 					input: {
@@ -191,6 +226,28 @@ module.exports = NodeHelper.create({
 			requestId,
 			callId,
 			...weather
+		});
+	},
+
+	async handleNewsFetch (payload) {
+		const { instanceId, requestId, callId } = payload;
+		const settings = this.instances.get(instanceId) || {};
+		const feeds = Array.isArray(payload.feeds) && payload.feeds.length
+			? payload.feeds
+			: settings.newsFeeds || DEFAULT_FEEDS;
+		const limit = payload.limit || settings.newsLimit || 5;
+
+		const news = await fetchNews({
+			feeds,
+			limit,
+			topic: payload.topic
+		});
+
+		this.sendSocketNotification("AI_NEWS_RESULT", {
+			instanceId,
+			requestId,
+			callId,
+			...news
 		});
 	},
 

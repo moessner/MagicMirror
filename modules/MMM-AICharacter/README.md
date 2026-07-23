@@ -57,7 +57,7 @@ const aiCharacterModule = {
     voiceLang: "en-US",
     characterName: "Pixel",
     systemPrompt:
-      "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize from the tool result — never invent numbers.",
+      "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize from the tool result — never invent numbers. When asked about news or Schlagzeilen, call get_news, then summarize from the tool result — never invent headlines.",
     postSpeakListenMs: 8000,
     wakeSilenceMs: 550,
     vadThreshold: 0.015,
@@ -66,6 +66,11 @@ const aiCharacterModule = {
     lon: null,
     units: "metric", // or "imperial"
     showWeatherCard: true,
+    showNewsCard: true,
+    newsLimit: 5,
+    newsFeeds: [
+      { title: "Tagesschau", url: "https://www.tagesschau.de/xml/rss2/" }
+    ],
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
@@ -85,6 +90,9 @@ const aiCharacterModule = {
 | `lat` / `lon` | `null` | Fallback coordinates when geolocation is denied or unavailable |
 | `units` | `"metric"` | `"metric"` (°C, km/h) or `"imperial"` (°F, mph) |
 | `showWeatherCard` | `true` | Show a compact weather card under captions while Pixel answers |
+| `showNewsCard` | `true` | Show a compact Schlagzeilen card under captions while Pixel answers |
+| `newsLimit` | `5` | Max headlines shown / returned to the model |
+| `newsFeeds` | Tagesschau RSS | Array of `{ title, url }` RSS/Atom feeds (no API key) |
 
 Start MagicMirror with the OpenAI key available to the process:
 
@@ -101,9 +109,10 @@ npm run server
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
 5. Ask about the weather — Pixel calls the `get_weather` tool (Open-Meteo), shows a compact weather card, and speaks a short summary.
-6. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
-7. After that window, the character (and weather card) dematerialize until the next wake word.
-8. Interrupt anytime by speaking over the reply (Realtime barge-in).
+6. Ask for news / Schlagzeilen — Pixel calls `get_news` (RSS), shows a headlines card, and speaks a short summary.
+7. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
+8. After that window, the character (and weather/news card) dematerialize until the next wake word.
+9. Interrupt anytime by speaking over the reply (Realtime barge-in).
 
 ## Weather tool
 
@@ -111,6 +120,13 @@ npm run server
 - If geo is denied/unavailable, the module uses config `lat` / `lon`.
 - Named places (`"Berlin"`, `"Munich"`) are geocoded via Open-Meteo; no weather API key required.
 - Forecast data is fetched in the module’s node helper and returned to the Realtime session as a function tool result.
+
+## News / Schlagzeilen tool
+
+- Default feed is **Tagesschau** RSS (`https://www.tagesschau.de/xml/rss2/`); no news API key required.
+- Configure additional feeds with `newsFeeds`, and cap count with `newsLimit`.
+- Optional topic keywords from the model filter titles/summaries; if nothing matches, latest headlines are returned with a note.
+- Only one card (weather or news) is shown at a time.
 
 ## Notes
 

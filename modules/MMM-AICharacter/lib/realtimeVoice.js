@@ -625,7 +625,7 @@
 						type: "realtime",
 						instructions:
 							config.systemPrompt ||
-							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers.",
+							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers. When asked about news, headlines, current events, or Schlagzeilen, call get_news, then summarize briefly from the tool result — never invent headlines.",
 						tools: [
 							{
 								type: "function",
@@ -638,6 +638,24 @@
 										location: {
 											type: "string",
 											description: "Optional city or place name. Omit to use the device location."
+										}
+									},
+									required: [],
+									additionalProperties: false
+								}
+							},
+							{
+								type: "function",
+								name: "get_news",
+								description:
+									"Fetch current news headlines (Schlagzeilen). Call this whenever the user asks about news, headlines, current events, or Schlagzeilen. Optionally pass a topic keyword to filter.",
+								parameters: {
+									type: "object",
+									properties: {
+										topic: {
+											type: "string",
+											description:
+												"Optional topic or keyword to filter headlines (e.g. politics, sport, Klima)."
 										}
 									},
 									required: [],
