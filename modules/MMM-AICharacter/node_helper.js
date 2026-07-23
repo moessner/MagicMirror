@@ -1,9 +1,28 @@
 const NodeHelper = require("node_helper");
 const Log = require("logger");
+const { fetchWeather } = require("./lib/weatherFetch");
 
 const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "sage";
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+
+const GET_WEATHER_TOOL = {
+	type: "function",
+	name: "get_weather",
+	description:
+		"Fetch current weather and a short daily forecast. Call this whenever the user asks about weather, temperature, or the forecast. Omit location to use the device coordinates.",
+	parameters: {
+		type: "object",
+		properties: {
+			location: {
+				type: "string",
+				description: "Optional city or place name. Omit to use the device location."
+			}
+		},
+		required: [],
+		additionalProperties: false
+	}
+};
 
 module.exports = NodeHelper.create({
 	start () {
@@ -26,7 +45,8 @@ module.exports = NodeHelper.create({
 				systemPrompt: payload.systemPrompt,
 				characterName: payload.characterName || "Pixel",
 				voiceLang: payload.voiceLang || "en",
-				wakeWord: payload.wakeWord || ""
+				wakeWord: payload.wakeWord || "",
+				units: payload.units || "metric"
 			});
 			this.sendSocketNotification("AI_CONFIG_OK", { instanceId: payload.instanceId });
 			return;
@@ -40,6 +60,20 @@ module.exports = NodeHelper.create({
 					requestId: payload.requestId,
 					error: true,
 					message: error.message || "Failed to mint Realtime token"
+				});
+			});
+			return;
+		}
+
+		if (notification === "AI_WEATHER_FETCH") {
+			this.handleWeatherFetch(payload).catch((error) => {
+				Log.error(`${this.name} weather fetch error: ${error.message}`);
+				this.sendSocketNotification("AI_WEATHER_RESULT", {
+					instanceId: payload.instanceId,
+					requestId: payload.requestId,
+					callId: payload.callId,
+					error: true,
+					message: error.message || "Weather fetch failed"
 				});
 			});
 			return;
@@ -85,6 +119,8 @@ module.exports = NodeHelper.create({
 				type: "realtime",
 				model,
 				instructions,
+				tools: [GET_WEATHER_TOOL],
+				tool_choice: "auto",
 				audio: {
 					input: {
 						transcription: {
@@ -133,6 +169,28 @@ module.exports = NodeHelper.create({
 			expiresAt: data.expires_at,
 			model,
 			voice
+		});
+	},
+
+	async handleWeatherFetch (payload) {
+		const { instanceId, requestId, callId } = payload;
+		const settings = this.instances.get(instanceId) || {};
+		const language = String(settings.voiceLang || "en").slice(0, 2);
+		const units = payload.units || settings.units || "metric";
+
+		const weather = await fetchWeather({
+			lat: payload.lat,
+			lon: payload.lon,
+			location: payload.location,
+			units,
+			language
+		});
+
+		this.sendSocketNotification("AI_WEATHER_RESULT", {
+			instanceId,
+			requestId,
+			callId,
+			...weather
 		});
 	},
 

@@ -9,6 +9,14 @@
   margin: 0 auto;
 }
 
+/*
+ * bottom_bar (e.g. newsfeed) is painted after middle_center in the MM DOM.
+ * Raise this region while the weather card is open so the card isn't covered.
+ */
+.region.middle.center:has(.mmm-ai-character--weather) {
+  z-index: 40;
+}
+
 .mmm-ai-character {
   display: flex;
   flex-direction: column;
@@ -51,7 +59,8 @@
 }
 
 .mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__user,
-.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant {
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant,
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__weather {
   display: none;
 }
 
@@ -102,4 +111,107 @@
 
 .mmm-ai-character--error .mmm-ai-character__status {
   color: #ff8ad8;
+}
+
+/* Keep avatar + captions + card above the bottom news bar. */
+.mmm-ai-character--weather .mmm-ai-character__stage--holo {
+  min-height: min(30vh, 15rem);
+}
+
+.mmm-ai-character--weather .mmm-ai-character__avatar {
+  width: min(52vw, 16rem);
+  height: min(30vh, 15rem);
+}
+
+.mmm-ai-character--weather .mmm-ai-character__captions {
+  min-height: 0;
+  padding-bottom: 0.25rem;
+}
+
+.mmm-ai-character__weather {
+  position: relative;
+  z-index: 1;
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+  padding: 0.75rem 0.9rem 0.85rem;
+  border: 1px solid rgba(120, 200, 255, 0.28);
+  border-radius: 0.85rem;
+  background: linear-gradient(160deg, rgba(8, 28, 48, 0.94), rgba(4, 12, 24, 0.92));
+  box-shadow: 0 0 24px rgba(80, 180, 255, 0.12);
+  animation: mmm-ai-weather-in 0.45s ease;
+}
+
+.mmm-ai-character__weather-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.mmm-ai-character__weather-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+  color: #9fdfff;
+  text-shadow: 0 0 14px rgba(120, 210, 255, 0.45);
+}
+
+.mmm-ai-character__weather-now {
+  text-align: left;
+}
+
+.mmm-ai-character__weather-temp {
+  font-size: 1.85rem;
+  font-weight: 500;
+  line-height: 1.1;
+  color: #e8ffff;
+}
+
+.mmm-ai-character__weather-place {
+  font-size: 0.95rem;
+  color: rgba(215, 244, 255, 0.85);
+}
+
+.mmm-ai-character__weather-condition {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  color: rgba(199, 125, 255, 0.95);
+}
+
+.mmm-ai-character__weather-days {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(140, 200, 255, 0.18);
+}
+
+.mmm-ai-character__weather-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: rgba(215, 244, 255, 0.8);
+}
+
+.mmm-ai-character__weather-day .wi {
+  font-size: 1.25rem;
+  color: #9fdfff;
+}
+
+.mmm-ai-character__weather-day-temps {
+  white-space: nowrap;
+}
+
+@keyframes mmm-ai-weather-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

@@ -56,11 +56,16 @@ const aiCharacterModule = {
     transcriptionModel: "gpt-4o-mini-transcribe",
     voiceLang: "en-US",
     characterName: "Pixel",
-    systemPrompt: "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences).",
+    systemPrompt:
+      "You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize from the tool result — never invent numbers.",
     postSpeakListenMs: 8000,
     wakeSilenceMs: 550,
     vadThreshold: 0.015,
     appearOnWake: true, // hologram only visible during an active wake session
+    lat: null, // fallback if browser geolocation is denied
+    lon: null,
+    units: "metric", // or "imperial"
+    showWeatherCard: true,
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
 };
@@ -77,6 +82,9 @@ const aiCharacterModule = {
 | `wakeSilenceMs` | `550` | End-of-clip silence for wake-word detection only |
 | `vadThreshold` | `0.015` | Local mic loudness gate for starting a wake clip |
 | `appearOnWake` | `true` | Materialize on wake, dematerialize when the follow-up window ends |
+| `lat` / `lon` | `null` | Fallback coordinates when geolocation is denied or unavailable |
+| `units` | `"metric"` | `"metric"` (°C, km/h) or `"imperial"` (°F, mph) |
+| `showWeatherCard` | `true` | Show a compact weather card under captions while Pixel answers |
 
 Start MagicMirror with the OpenAI key available to the process:
 
@@ -92,9 +100,17 @@ npm run server
 2. Say the wake word (default `alexa`, configurable via `wakeWord`) — the character materializes.
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
-5. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
-6. After that window, the character dematerializes until the next wake word.
-7. Interrupt anytime by speaking over the reply (Realtime barge-in).
+5. Ask about the weather — Pixel calls the `get_weather` tool (Open-Meteo), shows a compact weather card, and speaks a short summary.
+6. For ~8s after a reply, you can ask a follow-up without repeating the wake word.
+7. After that window, the character (and weather card) dematerialize until the next wake word.
+8. Interrupt anytime by speaking over the reply (Realtime barge-in).
+
+## Weather tool
+
+- Location prefers **browser geolocation** when the user asks without naming a place.
+- If geo is denied/unavailable, the module uses config `lat` / `lon`.
+- Named places (`"Berlin"`, `"Munich"`) are geocoded via Open-Meteo; no weather API key required.
+- Forecast data is fetched in the module’s node helper and returned to the Realtime session as a function tool result.
 
 ## Notes
 
