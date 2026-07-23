@@ -189,6 +189,15 @@ export class AvatarApp {
     this.audio.playBuffer(buffer, () => this.setState("idle"));
   }
 
+  async playAudioBuffer(data: ArrayBuffer, cues?: MouthCue[]): Promise<void> {
+    await this.audio.resume();
+    const buffer = await this.audio.loadArrayBuffer(data);
+    if (cues) this.lipSync.setRhubarbCues(cues);
+    else this.lipSync.clearCues();
+    this.setState("speaking");
+    this.audio.playBuffer(buffer, () => this.setState("idle"));
+  }
+
   stopAudio(): void {
     this.audio.stop();
     this.audio.detachMediaStream();
@@ -199,6 +208,12 @@ export class AvatarApp {
     await this.audio.resume();
     this.lipSync.clearCues();
     this.audio.attachMediaStream(stream);
+  }
+
+  async attachMediaElement(element: HTMLMediaElement): Promise<void> {
+    await this.audio.resume();
+    this.lipSync.clearCues();
+    this.audio.attachMediaElement(element);
   }
 
   detachStream(): void {

@@ -15,6 +15,7 @@ async function boot(): Promise<void> {
   const voiceSelect = document.getElementById("voiceSelect") as HTMLSelectElement;
   const voicePreviewText = document.getElementById("voicePreviewText") as HTMLInputElement;
   const previewVoiceBtn = document.getElementById("previewVoice") as HTMLButtonElement;
+  const stopAudioBtn = document.getElementById("stopAudio")!;
 
   const app = await createAvatar(stage);
   statusEl.textContent = `state: ${app.getState()}`;
@@ -51,20 +52,45 @@ async function boot(): Promise<void> {
     }
   }
 
+  let previewObjectUrl: string | null = null;
+  let previewBusy = false;
+  let activePreviewVoice = "";
+  const previewAudioEl = document.createElement("audio");
+  previewAudioEl.preload = "auto";
+  previewAudioEl.style.display = "none";
+  document.body.appendChild(previewAudioEl);
+
+  previewAudioEl.addEventListener("playing", () => {
+    app.setState("speaking");
+  });
+  previewAudioEl.addEventListener("ended", () => {
+    app.detachStream();
+    app.setState("idle");
+    activePreviewVoice = "";
+  });
+
+  function stopPreviewPlayback (): void {
+    previewAudioEl.pause();
+    previewAudioEl.removeAttribute("src");
+    previewAudioEl.load();
+    app.stopAudio();
+    activePreviewVoice = "";
+  }
+
   audioInput.addEventListener("change", async () => {
     const file = audioInput.files?.[0];
     if (!file) return;
+    stopPreviewPlayback();
     await app.playAudioFile(file, parseCues());
     statusEl.textContent = `playing: ${file.name}`;
   });
 
-  document.getElementById("stopAudio")!.addEventListener("click", () => {
-    app.stopAudio();
+  stopAudioBtn.addEventListener("click", () => {
+    stopPreviewPlayback();
     app.setState("idle");
     statusEl.textContent = "state: idle";
   });
 
-  let previewObjectUrl: string | null = null;
   previewVoiceBtn.addEventListener("click", async () => {
     const voice = voiceSelect.value;
     const text = voicePreviewText.value.trim() || DEFAULT_VOICE_PREVIEW_TEXT;
@@ -73,6 +99,9 @@ async function boot(): Promise<void> {
       return;
     }
 
+    // Unlock AudioContext during the user gesture (before await gaps).
+    await app.audio.resume();
+    previewBusy = true;
     previewVoiceBtn.disabled = true;
     statusEl.textContent = `Generating ${voice}…`;
     try {
@@ -93,22 +122,41 @@ async function boot(): Promise<void> {
         throw new Error(detail);
       }
 
-      const blob = await response.blob();
+      const data = await response.arrayBuffer();
+      if (data.byteLength < 100) throw new Error("Voice preview returned empty audio.");
+
+      const blob = new Blob([data], { type: "audio/mpeg" });
       if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
       previewObjectUrl = URL.createObjectURL(blob);
-      await app.playAudioUrl(previewObjectUrl, parseCues());
-      statusEl.textContent = `preview: ${voice}`;
+
+      stopPreviewPlayback();
+      previewAudioEl.src = previewObjectUrl;
+      previewAudioEl.currentTime = 0;
+
+      // Tap the element for analyser lip-sync; element itself is the audible path.
+      await app.audio.resume();
+      await app.attachMediaElement(previewAudioEl);
+      await previewAudioEl.play();
+      activePreviewVoice = voice;
+      statusEl.textContent = `preview: ${voice} (${Math.round(data.byteLength / 1024)} KB)`;
+      // Keep preview status visible briefly before the idle ticker resumes.
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
     } catch (error) {
+      console.error("Voice preview failed", error);
       statusEl.textContent = error instanceof Error ? error.message : "Voice preview failed";
       app.setState("error");
     } finally {
+      previewBusy = false;
       previewVoiceBtn.disabled = false;
     }
   });
 
   window.setInterval(() => {
-    if (previewVoiceBtn.disabled) return;
-    statusEl.textContent = `state: ${app.getState()} | audio: ${app.audio.isPlaying ? "on" : "off"} | voice: ${voiceSelect.value}`;
+    if (previewBusy) return;
+    const elementPlaying = !previewAudioEl.paused && !previewAudioEl.ended && previewAudioEl.currentTime > 0;
+    const audioOn = app.audio.isPlaying || elementPlaying;
+    const voiceLabel = activePreviewVoice || voiceSelect.value;
+    statusEl.textContent = `state: ${app.getState()} | audio: ${audioOn ? "on" : "off"} | voice: ${voiceLabel}`;
   }, 400);
 }
 

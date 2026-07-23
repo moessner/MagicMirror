@@ -5,6 +5,7 @@ export class AudioController {
   readonly context: AudioContext;
   private source: AudioBufferSourceNode | null = null;
   private streamSource: MediaStreamAudioSourceNode | null = null;
+  private mediaElementSource: MediaElementAudioSourceNode | null = null;
   private analyser: AnalyserNode;
   private gain: GainNode;
   private freqData: Uint8Array<ArrayBuffer>;
@@ -70,6 +71,14 @@ export class AudioController {
       }
       this.streamSource = null;
     }
+    if (this.mediaElementSource) {
+      try {
+        this.mediaElementSource.disconnect();
+      } catch {
+        // ignore
+      }
+      // MediaElementAudioSourceNode is permanently bound to its element; keep the node.
+    }
     if (this.streamAttached) {
       try {
         this.analyser.connect(this.context.destination);
@@ -78,6 +87,40 @@ export class AudioController {
       }
     }
     this.streamAttached = false;
+  }
+
+  /**
+   * Route an HTMLMediaElement through the analyser for lip-sync + audible output.
+   * Creating a MediaElementSource redirects element output into the Web Audio graph,
+   * so the analyser must stay connected to the destination.
+   */
+  attachMediaElement(element: HTMLMediaElement): void {
+    this.stop();
+    if (this.streamSource) {
+      try {
+        this.streamSource.disconnect();
+      } catch {
+        // ignore
+      }
+      this.streamSource = null;
+    }
+    void this.resume();
+    if (!this.mediaElementSource) {
+      this.mediaElementSource = this.context.createMediaElementSource(element);
+    }
+    try {
+      this.mediaElementSource.disconnect();
+    } catch {
+      // first connect
+    }
+    this.mediaElementSource.connect(this.analyser);
+    try {
+      this.analyser.connect(this.context.destination);
+    } catch {
+      // already connected
+    }
+    this.streamAttached = true;
+    this.startedAt = this.context.currentTime;
   }
 
   async loadUrl(url: string): Promise<AudioBuffer> {
@@ -89,6 +132,10 @@ export class AudioController {
   async loadFile(file: File): Promise<AudioBuffer> {
     const buf = await file.arrayBuffer();
     return this.context.decodeAudioData(buf.slice(0));
+  }
+
+  async loadArrayBuffer(data: ArrayBuffer): Promise<AudioBuffer> {
+    return this.context.decodeAudioData(data.slice(0));
   }
 
   playBuffer(buffer: AudioBuffer, onEnded?: () => void): void {
