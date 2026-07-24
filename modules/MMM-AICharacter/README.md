@@ -117,9 +117,6 @@ This fork **tracks** [`config/config.js`](../../config/config.js) in git (placeh
 
 1. Edit `config/config.js` when you want the shared fork layout to change (then commit).
 2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add `OPENAI_API_KEY` and `SECRET_GCAL_ICS_URL`.
-   - **Name:** `SECRET_GCAL_ICS_URL`
-   - **Value:** the full private iCal URL from Google Calendar (Settings → Integrate calendar → Secret address in iCal format), e.g. `https://calendar.google.com/calendar/ical/you%40gmail.com/private-…/basic.ics`
-   - Keep `%40` as-is (that is the encoded `@` in the calendar id). Do **not** paste the variable name as the secret value.
 3. Keep `hideConfigSecrets: true` so `SECRET_*` values are redacted for the browser.
 4. Install module deps once per environment:
 
@@ -130,7 +127,7 @@ cd avatar && npm install && npm run build
 
 ```bash
 export OPENAI_API_KEY="…"
-export SECRET_GCAL_ICS_URL="https://calendar.google.com/calendar/ical/you%40gmail.com/private-…/basic.ics"
+export SECRET_GCAL_ICS_URL="https://calendar.google.com/calendar/ical/…/private-…/basic.ics"
 npm run server
 ```
 
@@ -164,11 +161,9 @@ npm run server
 ## Calendar / Termine tool
 
 - Uses Google Calendar’s **private ICS URL** (Settings → calendar → Integrate calendar → Secret address in iCal format). No Google OAuth required.
-- Expected URL shape: `https://calendar.google.com/calendar/ical/<email-or-id>%40…/private-<token>/basic.ics` (email `@` appears as `%40`).
 - Configure one or more feeds with `calendars: [{ name, url }]`. Prefer `${SECRET_GCAL_ICS_URL}` so the secret stays out of git and the browser.
 - Events are parsed with MagicMirror’s iCal utilities (recurrence supported) and returned via `get_calendar`.
 - This is independent of the default `calendar` UI module — you do not need that module on the mirror for Pixel to answer schedule questions.
-- If the mirror logs that the calendar URL is the secret name, the Cursor secret **value** was set to the name instead of the ICS URL — fix it in the environment Secrets and restart.
 
 ## Notes
 
