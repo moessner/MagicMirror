@@ -21,6 +21,15 @@ Runtime config lives in `config/config.js` (gitignored). Create it once from the
 `cp config/config.js.sample config/config.js`. To reach the server from the VM browser, set
 `address: "0.0.0.0"` and `ipWhitelist: []` in that file. Validate with `node --run config:check`.
 
+Third-party module deps are **not** installed by the root `npm install`. For the AI companion:
+
+```sh
+cd modules/MMM-AICharacter && npm install --omit=dev
+cd avatar && npm install && npm run build
+```
+
+Without that, the node helper fails with `Cannot find package 'ai'`. Also export `OPENAI_API_KEY` (and optional `SECRET_GCAL_ICS_URL` for calendar).
+
 ### Running the app
 
 - Browser/server mode (no display needed): `node ./serveronly` serves the mirror on
