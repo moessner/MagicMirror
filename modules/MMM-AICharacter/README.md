@@ -118,7 +118,12 @@ This fork **tracks** [`config/config.js`](../../config/config.js) in git (placeh
 1. Edit `config/config.js` when you want the shared fork layout to change (then commit).
 2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add `OPENAI_API_KEY` and `SECRET_GCAL_ICS_URL`.
 3. Keep `hideConfigSecrets: true` so `SECRET_*` values are redacted for the browser.
-4. Run `bash .cursor/install.sh` (via [`.cursor/environment.json`](../../.cursor/environment.json)) so module deps / avatar build are present.
+4. Install module deps once per environment:
+
+```bash
+cd modules/MMM-AICharacter && npm install --omit=dev
+cd avatar && npm install && npm run build
+```
 
 ```bash
 export OPENAI_API_KEY="…"

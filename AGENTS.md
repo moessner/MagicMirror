@@ -29,12 +29,14 @@ the browser wire. Optional local overrides: `config/config.env` (still gitignore
 
 Validate with `node --run config:check`.
 
-Bootstrap ([`.cursor/install.sh`](.cursor/install.sh) / `environment.json`) installs
-root + MMM-AICharacter deps (needed for the `ai` package) and builds the avatar:
+MMM-AICharacter deps are **not** covered by the root `npm install`. After clone:
 
 ```sh
-bash .cursor/install.sh
+cd modules/MMM-AICharacter && npm install --omit=dev
+cd avatar && npm install && npm run build
 ```
+
+Without that, the node helper fails with `Cannot find package 'ai'`.
 
 ### Running the app
 
