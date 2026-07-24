@@ -13,7 +13,8 @@
  * bottom_bar (e.g. newsfeed) is painted after middle_center in the MM DOM.
  * Raise this region while the weather card is open so the card isn't covered.
  */
-.region.middle.center:has(.mmm-ai-character--weather) {
+.region.middle.center:has(.mmm-ai-character--weather),
+.region.middle.center:has(.mmm-ai-character--news) {
   z-index: 40;
 }
 
@@ -60,7 +61,8 @@
 
 .mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__user,
 .mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__assistant,
-.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__weather {
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__weather,
+.mmm-ai-character:not(.mmm-ai-character--present) .mmm-ai-character__news {
   display: none;
 }
 
@@ -114,16 +116,19 @@
 }
 
 /* Keep avatar + captions + card above the bottom news bar. */
-.mmm-ai-character--weather .mmm-ai-character__stage--holo {
+.mmm-ai-character--weather .mmm-ai-character__stage--holo,
+.mmm-ai-character--news .mmm-ai-character__stage--holo {
   min-height: min(30vh, 15rem);
 }
 
-.mmm-ai-character--weather .mmm-ai-character__avatar {
+.mmm-ai-character--weather .mmm-ai-character__avatar,
+.mmm-ai-character--news .mmm-ai-character__avatar {
   width: min(52vw, 16rem);
   height: min(30vh, 15rem);
 }
 
-.mmm-ai-character--weather .mmm-ai-character__captions {
+.mmm-ai-character--weather .mmm-ai-character__captions,
+.mmm-ai-character--news .mmm-ai-character__captions {
   min-height: 0;
   padding-bottom: 0.25rem;
 }
@@ -206,6 +211,75 @@
 }
 
 @keyframes mmm-ai-weather-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mmm-ai-character__news {
+  position: relative;
+  z-index: 1;
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+  padding: 0.75rem 0.9rem 0.85rem;
+  border: 1px solid rgba(120, 200, 255, 0.28);
+  border-radius: 0.85rem;
+  background: linear-gradient(160deg, rgba(8, 28, 48, 0.94), rgba(4, 12, 24, 0.92));
+  box-shadow: 0 0 24px rgba(80, 180, 255, 0.12);
+  animation: mmm-ai-news-in 0.45s ease;
+  text-align: left;
+}
+
+.mmm-ai-character__news-heading {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(199, 125, 255, 0.95);
+  margin-bottom: 0.55rem;
+}
+
+.mmm-ai-character__news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.mmm-ai-character__news-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(140, 200, 255, 0.14);
+}
+
+.mmm-ai-character__news-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.mmm-ai-character__news-source {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(159, 223, 255, 0.75);
+}
+
+.mmm-ai-character__news-title {
+  font-size: 0.95rem;
+  line-height: 1.3;
+  color: #e8ffff;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@keyframes mmm-ai-news-in {
   from {
     opacity: 0;
     transform: translateY(0.4rem);
