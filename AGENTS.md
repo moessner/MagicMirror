@@ -17,37 +17,24 @@ startup update script pick this up automatically. If you ever land on `v22.14.0`
 
 ### Config
 
-**Reproducible layout (git):** [`config/config.js.sample`](config/config.js.sample) — clock, Tagesschau
-newsfeed, MMM-AICharacter, `${SECRET_GCAL_ICS_URL}` placeholders. This is the
-canonical config for every Cursor Cloud agent.
+**Tracked in git:** [`config/config.js`](config/config.js) — clock, Tagesschau newsfeed,
+MMM-AICharacter, `${SECRET_GCAL_ICS_URL}` placeholders. Every clone / Cursor agent
+gets the same layout; edit this file when you want the fork-wide default to change.
 
 **Secrets (Cursor dashboard, not git):** add Runtime Secrets on the
 [Cloud Agents environment](https://cursor.com/dashboard/cloud-agents):
 `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` (Google private iCal URL). MagicMirror
 substitutes `${…}` at load time; with `hideConfigSecrets: true` they stay off
-the browser wire.
+the browser wire. Optional local overrides: `config/config.env` (still gitignored).
 
-**Do not** put a full `config.js` body in a Cursor secret. Cursor injects env
-vars, not arbitrary files. The split above is the supported pattern.
+Validate with `node --run config:check`.
 
-Bootstrap (also run by [`.cursor/install.sh`](.cursor/install.sh) / `environment.json`):
+Bootstrap ([`.cursor/install.sh`](.cursor/install.sh) / `environment.json`) installs
+root + MMM-AICharacter deps (needed for the `ai` package) and builds the avatar:
 
 ```sh
 bash .cursor/install.sh
-# or manually:
-cp -f config/config.js.sample config/config.js
-node --run config:check
 ```
-
-Third-party module deps are **not** installed by the root `npm install` alone.
-The install script also runs:
-
-```sh
-cd modules/MMM-AICharacter && npm install --omit=dev
-cd avatar && npm install && npm run build
-```
-
-Without that, the node helper fails with `Cannot find package 'ai'`.
 
 ### Running the app
 

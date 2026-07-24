@@ -1,5 +1,15 @@
-/* Mirror of config/config.js (this fork tracks config.js in git).
- * Prefer editing config.js; keep this sample in sync for MM tooling.
+/*
+ * MagicMirror config for this fork (tracked in git).
+ *
+ * Secrets stay out of the repo: set Cursor Cloud / shell env vars and reference
+ * them as ${SECRET_NAME}. With hideConfigSecrets: true they are redacted for
+ * the browser and restored only in node helpers.
+ *
+ * Required secrets:
+ * - OPENAI_API_KEY (read by MMM-AICharacter directly)
+ * - SECRET_GCAL_ICS_URL (Google Calendar secret iCal address)
+ *
+ * Optional local overrides: config/config.env (gitignored).
  */
 let config = {
 	address: "0.0.0.0",

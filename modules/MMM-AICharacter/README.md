@@ -43,7 +43,7 @@ Open http://localhost:5173 for state buttons and test-audio lip sync.
 
 ## Configuration
 
-Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`config/config.js.sample`](../../config/config.js.sample):
+Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`config/config.js`](../../config/config.js):
 
 ```javascript
 {
