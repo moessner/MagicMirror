@@ -6,6 +6,47 @@
 const ical = require("node-ical");
 const CalendarFetcherUtils = require("../../../defaultmodules/calendar/calendarfetcherutils");
 
+/**
+ * True when `value` is a usable http(s) calendar URL.
+ * Google private iCal addresses look like:
+ * https://calendar.google.com/calendar/ical/user%40gmail.com/private-…/basic.ics
+ * (`%40` is the encoded `@` in the calendar id — keep it as-is.)
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isHttpUrl (value) {
+	try {
+		const parsed = new URL(value);
+		return parsed.protocol === "http:" || parsed.protocol === "https:";
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Detect common misconfigurations of Cursor/env secrets (name pasted as value,
+ * unresolved placeholders, empty/whitespace).
+ * @param {string} url
+ * @returns {string|null} Human-readable reason, or null if ok.
+ */
+function invalidCalendarUrlReason (url) {
+	const value = typeof url === "string" ? url.trim() : "";
+	if (!value) {
+		return "empty calendar URL";
+	}
+	if (value.startsWith("**SECRET_") || value.includes("${SECRET_")) {
+		return "unresolved secret placeholder (set SECRET_GCAL_ICS_URL=https://…/basic.ics, not the variable name)";
+	}
+	// e.g. env value mistakenly set to the secret name (optionally with trailing whitespace)
+	if (/^SECRET_[A-Z0-9_]+$/i.test(value)) {
+		return `calendar URL is the secret name "${value}" — set SECRET_GCAL_ICS_URL=https://calendar.google.com/calendar/ical/…/private-…/basic.ics`;
+	}
+	if (!isHttpUrl(value)) {
+		return `calendar URL is not a valid http(s) URL (got "${value.slice(0, 48)}${value.length > 48 ? "…" : ""}")`;
+	}
+	return null;
+}
+
 function normalizeCalendars (calendars) {
 	if (!Array.isArray(calendars) || calendars.length === 0) {
 		return [];
@@ -14,12 +55,14 @@ function normalizeCalendars (calendars) {
 		.map((entry) => {
 			if (typeof entry === "string") {
 				const url = entry.trim();
-				return url ? { name: "Calendar", url } : null;
+				if (!url || invalidCalendarUrlReason(url)) {
+					return null;
+				}
+				return { name: "Calendar", url };
 			}
 			if (entry && typeof entry.url === "string" && entry.url.trim()) {
 				const url = entry.url.trim();
-				// Reject unresolved secret placeholders so we fail clearly.
-				if (url.startsWith("**SECRET_") || url.includes("${SECRET_")) {
+				if (invalidCalendarUrlReason(url)) {
 					return null;
 				}
 				return {
@@ -127,11 +170,22 @@ async function fetchCalendar ({
 	maximumNumberOfDays = 365,
 	locale = "en-US"
 } = {}) {
+	const rawEntries = Array.isArray(calendars) ? calendars : [];
+	const rejectionReasons = [];
+	for (const entry of rawEntries) {
+		const url = typeof entry === "string" ? entry.trim() : entry?.url?.trim?.() || "";
+		const reason = invalidCalendarUrlReason(url);
+		if (reason) {
+			rejectionReasons.push(reason);
+		}
+	}
+
 	const resolved = normalizeCalendars(calendars);
 	if (resolved.length === 0) {
-		throw new Error(
-			"No calendar URLs configured. Set calendars in MMM-AICharacter config (e.g. Google secret ICS URL via ${SECRET_GCAL_ICS_URL})."
-		);
+		const detail = rejectionReasons[0]
+			? ` ${rejectionReasons[0]}.`
+			: " Set calendars in MMM-AICharacter config (e.g. Google secret ICS URL via ${SECRET_GCAL_ICS_URL}).";
+		throw new Error(`No calendar URLs configured.${detail}`);
 	}
 
 	const max = Math.max(1, Math.min(Number(maximumEntries) || 8, 20));
@@ -194,5 +248,7 @@ async function fetchCalendar ({
 
 module.exports = {
 	fetchCalendar,
-	normalizeCalendars
+	normalizeCalendars,
+	isHttpUrl,
+	invalidCalendarUrlReason
 };
