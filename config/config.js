@@ -12,7 +12,7 @@
  * Optional local overrides: config/config.env (gitignored).
  */
 let config = {
-	address: "0.0.0.0",
+	address: "::",
 	port: 8080,
 	basePath: "/",
 	ipWhitelist: [],
