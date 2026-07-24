@@ -17,18 +17,37 @@ startup update script pick this up automatically. If you ever land on `v22.14.0`
 
 ### Config
 
-Runtime config lives in `config/config.js` (gitignored). Create it once from the sample:
-`cp config/config.js.sample config/config.js`. To reach the server from the VM browser, set
-`address: "0.0.0.0"` and `ipWhitelist: []` in that file. Validate with `node --run config:check`.
+**Reproducible layout (git):** [`config/config.js.sample`](config/config.js.sample) — clock, Tagesschau
+newsfeed, MMM-AICharacter, `${SECRET_GCAL_ICS_URL}` placeholders. This is the
+canonical config for every Cursor Cloud agent.
 
-Third-party module deps are **not** installed by the root `npm install`. For the AI companion:
+**Secrets (Cursor dashboard, not git):** add Runtime Secrets on the
+[Cloud Agents environment](https://cursor.com/dashboard/cloud-agents):
+`OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` (Google private iCal URL). MagicMirror
+substitutes `${…}` at load time; with `hideConfigSecrets: true` they stay off
+the browser wire.
+
+**Do not** put a full `config.js` body in a Cursor secret. Cursor injects env
+vars, not arbitrary files. The split above is the supported pattern.
+
+Bootstrap (also run by [`.cursor/install.sh`](.cursor/install.sh) / `environment.json`):
+
+```sh
+bash .cursor/install.sh
+# or manually:
+cp -f config/config.js.sample config/config.js
+node --run config:check
+```
+
+Third-party module deps are **not** installed by the root `npm install` alone.
+The install script also runs:
 
 ```sh
 cd modules/MMM-AICharacter && npm install --omit=dev
 cd avatar && npm install && npm run build
 ```
 
-Without that, the node helper fails with `Cannot find package 'ai'`. Also export `OPENAI_API_KEY` (and optional `SECRET_GCAL_ICS_URL` for calendar).
+Without that, the node helper fails with `Cannot find package 'ai'`.
 
 ### Running the app
 

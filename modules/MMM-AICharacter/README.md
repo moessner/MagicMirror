@@ -107,23 +107,24 @@ Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`conf
 
 ## Secrets & Cursor Cloud
 
-MagicMirror does **not** load a full remote `config.js` from Cursor. Secrets become **environment variables**; `config.js` (gitignored) stays on the machine and references them.
+MagicMirror does **not** load a full remote `config.js` from Cursor. Use this split:
+
+| Piece | Where | Notes |
+|-------|--------|--------|
+| Modules, layout, placeholders | [`config/config.js.sample`](../../config/config.js.sample) (git) | Copied to gitignored `config/config.js` by [`.cursor/install.sh`](../../.cursor/install.sh) on every cloud agent install |
+| API key / private ICS URL | Cursor environment **Secrets** | `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` become env vars; referenced as `${SECRET_GCAL_ICS_URL}` in config |
+| Optional local overrides | `config/config.env` (gitignored) | Same var names; process env wins over `config.env` |
 
 Recommended setup:
 
-1. Keep `config/config.js` on the host (copy from `config.js.sample`). It is gitignored.
+1. Edit the **sample** when you want every future agent to share the same layout (then commit).
 2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add:
-   - `OPENAI_API_KEY` (Runtime Secret) — used directly by this module
+   - `OPENAI_API_KEY` (Runtime Secret)
    - `SECRET_GCAL_ICS_URL` (Runtime Secret) — Google Calendar **Secret address in iCal format**
-3. In `config.js` set `hideConfigSecrets: true` and use `${SECRET_GCAL_ICS_URL}` in `calendars[].url`.
-4. Optionally also put the same vars in `config/config.env` (also gitignored) for local runs outside Cloud Agents.
+3. Ensure the environment runs `bash .cursor/install.sh` (via committed [`.cursor/environment.json`](../../.cursor/environment.json) or the dashboard Update command).
+4. In config, keep `hideConfigSecrets: true` so `SECRET_*` values are redacted for the browser and restored only in node helpers.
 
-MagicMirror substitutes `${VAR}` at load time. With `hideConfigSecrets: true`, `SECRET_*` values are redacted for the browser and restored only in node helpers — so the private ICS URL never ships to the client.
-
-You **cannot** store an entire `config.js` body as one Cursor secret and have MagicMirror read it automatically. Closest alternatives:
-
-- Env vars + `${…}` placeholders (above), or
-- A small startup script that writes `config/config.js` from `process.env.SECRET_CONFIG_JS` before `node ./serveronly` (custom bootstrap; not built into MagicMirror).
+You **cannot** store an entire `config.js` body as one Cursor secret and have MagicMirror read it automatically. Closest alternative: a custom bootstrap that writes a file from `process.env` before start — unnecessary if you use the sample + `${SECRET_*}` pattern above.
 
 ```bash
 export OPENAI_API_KEY="…"
