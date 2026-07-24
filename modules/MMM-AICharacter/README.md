@@ -107,30 +107,23 @@ Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`conf
 
 ## Secrets & Cursor Cloud
 
-MagicMirror does **not** load a full remote `config.js` from Cursor. Use this split:
+This fork **tracks** [`config/config.js`](../../config/config.js) in git (placeholders only). Secrets stay in Cursor:
 
 | Piece | Where | Notes |
 |-------|--------|--------|
-| Modules, layout, placeholders | [`config/config.js.sample`](../../config/config.js.sample) (git) | Copied to gitignored `config/config.js` by [`.cursor/install.sh`](../../.cursor/install.sh) on every cloud agent install |
-| API key / private ICS URL | Cursor environment **Secrets** | `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` become env vars; referenced as `${SECRET_GCAL_ICS_URL}` in config |
+| Modules / layout | `config/config.js` (git) | Same file on every clone and Cursor agent |
+| API key / private ICS URL | Cursor environment **Secrets** | `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` → `${SECRET_GCAL_ICS_URL}` in config |
 | Optional local overrides | `config/config.env` (gitignored) | Same var names; process env wins over `config.env` |
 
-Recommended setup:
-
-1. Edit the **sample** when you want every future agent to share the same layout (then commit).
-2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add:
-   - `OPENAI_API_KEY` (Runtime Secret)
-   - `SECRET_GCAL_ICS_URL` (Runtime Secret) — Google Calendar **Secret address in iCal format**
-3. Ensure the environment runs `bash .cursor/install.sh` (via committed [`.cursor/environment.json`](../../.cursor/environment.json) or the dashboard Update command).
-4. In config, keep `hideConfigSecrets: true` so `SECRET_*` values are redacted for the browser and restored only in node helpers.
-
-You **cannot** store an entire `config.js` body as one Cursor secret and have MagicMirror read it automatically. Closest alternative: a custom bootstrap that writes a file from `process.env` before start — unnecessary if you use the sample + `${SECRET_*}` pattern above.
+1. Edit `config/config.js` when you want the shared fork layout to change (then commit).
+2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add `OPENAI_API_KEY` and `SECRET_GCAL_ICS_URL`.
+3. Keep `hideConfigSecrets: true` so `SECRET_*` values are redacted for the browser.
+4. Run `bash .cursor/install.sh` (via [`.cursor/environment.json`](../../.cursor/environment.json)) so module deps / avatar build are present.
 
 ```bash
 export OPENAI_API_KEY="…"
 export SECRET_GCAL_ICS_URL="https://calendar.google.com/calendar/ical/…/private-…/basic.ics"
 npm run server
-# or Electron: npm start
 ```
 
 ## Hands-free flow
