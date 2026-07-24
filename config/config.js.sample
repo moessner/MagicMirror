@@ -4,90 +4,36 @@
  * see https://docs.magicmirror.builders/configuration/introduction.html
  * and https://docs.magicmirror.builders/modules/configuration.html
  *
- * You can use environment variables using a `config.js.template` file instead of `config.js`
- * which will be converted to `config.js` while starting. For more information
- * see https://docs.magicmirror.builders/configuration/introduction.html#enviromnent-variables
+ * Secrets (Google Calendar ICS URL, etc.):
+ * - Add Runtime Secrets in your Cursor Cloud environment, or export env vars.
+ * - Reference them as ${SECRET_NAME} below. With hideConfigSecrets: true they
+ *   stay off the browser wire (restored only in node helpers).
+ * - Optional: put non-secret overrides in config/config.env next to this file.
+ * - OPENAI_API_KEY is read directly by MMM-AICharacter (not from this file).
  */
 let config = {
-	address: "localhost",	// Address to listen on, can be:
-							// - "localhost", "127.0.0.1", "::1" to listen on loopback interface
-							// - another specific IPv4/6 to listen on a specific interface
-							// - "0.0.0.0", "::" to listen on any interface
-							// Default, when address config is left out or empty, is "localhost"
+	address: "0.0.0.0",
 	port: 8080,
-	basePath: "/",	// The URL path where MagicMirror² is hosted. If you are using a Reverse proxy
-									// you must set the sub path here. basePath must end with a /
-	ipWhitelist: ["127.0.0.1", "::ffff:127.0.0.1", "::1"],	// Set [] to allow all IP addresses
-									// or add a specific IPv4 of 192.168.1.5 :
-									// ["127.0.0.1", "::ffff:127.0.0.1", "::1", "::ffff:192.168.1.5"],
-									// or IPv4 range of 192.168.3.0 --> 192.168.3.15 use CIDR format :
-									// ["127.0.0.1", "::ffff:127.0.0.1", "::1", "::ffff:192.168.3.0/28"],
+	basePath: "/",
+	ipWhitelist: [],
 
-	useHttps: false,			// Support HTTPS or not, default "false" will use HTTP
-	httpsPrivateKey: "",	// HTTPS private key path, only require when useHttps is true
-	httpsCertificate: "",	// HTTPS Certificate path, only require when useHttps is true
+	useHttps: false,
+	httpsPrivateKey: "",
+	httpsCertificate: "",
 
-	language: "en",
-	locale: "en-US",   // this variable is provided as a consistent location
-			   // it is currently only used by 3rd party modules. no MagicMirror code uses this value
-			   // as we have no usage, we  have no constraints on what this field holds
-			   // see https://en.wikipedia.org/wiki/Locale_(computer_software) for the possibilities
-
-	logLevel: ["INFO", "LOG", "WARN", "ERROR"], // Add "DEBUG" for even more logging
+	language: "de",
+	locale: "de-DE",
+	logLevel: ["INFO", "LOG", "WARN", "ERROR"],
 	timeFormat: 24,
 	units: "metric",
 
+	// Keep SECRET_* values out of the browser /config payload.
+	hideConfigSecrets: true,
+
 	modules: [
-		{
-			module: "alert",
-		},
-		{
-			module: "updatenotification",
-			position: "top_bar"
-		},
 		{
 			module: "clock",
 			position: "top_left"
-		},
-		{
-			module: "calendar",
-			header: "My Calendar",
-			position: "top_left",
-			config: {
-				calendars: [
-					{
-						// Google Calendar: Settings → calendar → Integrate calendar →
-						// "Secret address in iCal format". Treat the URL like a password.
-						symbol: "calendar-check",
-						url: "https://calendar.google.com/calendar/ical/pkm1t2uedjbp0uvq1o7oj1jouo%40group.calendar.google.com/private-08ba559f89eec70dd74bbd887d0a3598/basic.ics"
-					}
-				]
-			}
-		},
-		{
-			module: "compliments",
-			position: "lower_third"
-		},
-		{
-			module: "weather",
-			position: "top_right",
-			config: {
-				weatherProvider: "openmeteo",
-				type: "current",
-				lat: 40.776676,
-				lon: -73.971321
-			}
-		},
-		{
-			module: "weather",
-			position: "top_right",
-			header: "Weather Forecast",
-			config: {
-				weatherProvider: "openmeteo",
-				type: "forecast",
-				lat: 40.776676,
-				lon: -73.971321
-			}
 		},
 		{
 			module: "newsfeed",
@@ -95,8 +41,8 @@ let config = {
 			config: {
 				feeds: [
 					{
-						title: "New York Times",
-						url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"
+						title: "Tagesschau",
+						url: "https://www.tagesschau.de/xml/rss2/"
 					}
 				],
 				showSourceTitle: true,
@@ -105,6 +51,39 @@ let config = {
 				broadcastNewsUpdates: true
 			}
 		},
+		{
+			module: "MMM-AICharacter",
+			position: "middle_center",
+			config: {
+				wakeWord: "alexa",
+				wakeAliases: ["hey pixel"],
+				voiceLang: "de-DE",
+				characterName: "Pixel",
+				lat: null,
+				lon: null,
+				units: "metric",
+				showWeatherCard: true,
+				showNewsCard: true,
+				showCalendarCard: true,
+				newsLimit: 5,
+				newsFeeds: [
+					{
+						title: "Tagesschau",
+						url: "https://www.tagesschau.de/xml/rss2/"
+					}
+				],
+				// Google Calendar → Settings → Integrate calendar → Secret address in iCal format.
+				// Set Cursor secret / env SECRET_GCAL_ICS_URL to that private URL.
+				calendars: [
+					{
+						name: "Google",
+						url: "${SECRET_GCAL_ICS_URL}"
+					}
+				],
+				calendarMaximumEntries: 8,
+				calendarMaximumNumberOfDays: 365
+			}
+		}
 	]
 };
 

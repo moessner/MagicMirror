@@ -2,6 +2,7 @@ const NodeHelper = require("node_helper");
 const Log = require("logger");
 const { fetchWeather } = require("./lib/weatherFetch");
 const { DEFAULT_FEEDS, fetchNews } = require("./lib/newsFetch");
+const { fetchCalendar } = require("./lib/calendarFetch");
 
 const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "sage";
@@ -43,6 +44,19 @@ const GET_NEWS_TOOL = {
 	}
 };
 
+const GET_CALENDAR_TOOL = {
+	type: "function",
+	name: "get_calendar",
+	description:
+		"Fetch upcoming calendar events (Termine) from the user's calendars. Call this whenever the user asks about their schedule, calendar, appointments, Termine, or what is coming up.",
+	parameters: {
+		type: "object",
+		properties: {},
+		required: [],
+		additionalProperties: false
+	}
+};
+
 module.exports = NodeHelper.create({
 	start () {
 		this.instances = new Map();
@@ -67,7 +81,10 @@ module.exports = NodeHelper.create({
 				wakeWord: payload.wakeWord || "",
 				units: payload.units || "metric",
 				newsFeeds: Array.isArray(payload.newsFeeds) ? payload.newsFeeds : DEFAULT_FEEDS,
-				newsLimit: payload.newsLimit || 5
+				newsLimit: payload.newsLimit || 5,
+				calendars: Array.isArray(payload.calendars) ? payload.calendars : [],
+				calendarMaximumEntries: payload.calendarMaximumEntries || 8,
+				calendarMaximumNumberOfDays: payload.calendarMaximumNumberOfDays || 365
 			});
 			this.sendSocketNotification("AI_CONFIG_OK", { instanceId: payload.instanceId });
 			return;
@@ -114,6 +131,20 @@ module.exports = NodeHelper.create({
 			return;
 		}
 
+		if (notification === "AI_CALENDAR_FETCH") {
+			this.handleCalendarFetch(payload).catch((error) => {
+				Log.error(`${this.name} calendar fetch error: ${error.message}`);
+				this.sendSocketNotification("AI_CALENDAR_RESULT", {
+					instanceId: payload.instanceId,
+					requestId: payload.requestId,
+					callId: payload.callId,
+					error: true,
+					message: error.message || "Calendar fetch failed"
+				});
+			});
+			return;
+		}
+
 		if (notification === "AI_STT_TRANSCRIBE") {
 			this.handleTranscribe(payload).catch((error) => {
 				Log.error(`${this.name} STT error: ${error.message}`);
@@ -147,14 +178,14 @@ module.exports = NodeHelper.create({
 		const language = String(settings.voiceLang || "en").slice(0, 2);
 		const instructions =
 			settings.systemPrompt ||
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather. When asked about news, headlines, or Schlagzeilen, call get_news.";
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather. When asked about news, headlines, or Schlagzeilen, call get_news. When asked about the calendar, schedule, appointments, or Termine, call get_calendar.";
 
 		const body = {
 			session: {
 				type: "realtime",
 				model,
 				instructions,
-				tools: [GET_WEATHER_TOOL, GET_NEWS_TOOL],
+				tools: [GET_WEATHER_TOOL, GET_NEWS_TOOL, GET_CALENDAR_TOOL],
 				tool_choice: "auto",
 				audio: {
 					input: {
@@ -248,6 +279,32 @@ module.exports = NodeHelper.create({
 			requestId,
 			callId,
 			...news
+		});
+	},
+
+	async handleCalendarFetch (payload) {
+		const { instanceId, requestId, callId } = payload;
+		const settings = this.instances.get(instanceId) || {};
+		const calendars = Array.isArray(payload.calendars) && payload.calendars.length
+			? payload.calendars
+			: settings.calendars || [];
+		const maximumEntries = payload.maximumEntries || settings.calendarMaximumEntries || 8;
+		const maximumNumberOfDays
+			= payload.maximumNumberOfDays || settings.calendarMaximumNumberOfDays || 365;
+		const locale = payload.locale || settings.voiceLang || "en-US";
+
+		const calendar = await fetchCalendar({
+			calendars,
+			maximumEntries,
+			maximumNumberOfDays,
+			locale
+		});
+
+		this.sendSocketNotification("AI_CALENDAR_RESULT", {
+			instanceId,
+			requestId,
+			callId,
+			...calendar
 		});
 	},
 
