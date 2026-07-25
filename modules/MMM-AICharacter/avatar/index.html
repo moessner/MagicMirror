@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hologram Avatar Dev</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        color: #d7f4ff;
+        overflow: hidden;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        background: #000;
+      }
+      #panel {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 10px 12px;
+        background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(110, 200, 255, 0.25);
+        backdrop-filter: blur(8px);
+        z-index: 2;
+      }
+      button,
+      label.file {
+        appearance: none;
+        border: 1px solid rgba(168, 240, 255, 0.35);
+        background: rgba(20, 40, 55, 0.9);
+        color: #e8ffff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      button:hover,
+      label.file:hover {
+        border-color: #a8f0ff;
+        background: rgba(40, 70, 90, 0.95);
+      }
+      button.active {
+        border-color: #c77dff;
+        box-shadow: 0 0 0 1px rgba(199, 125, 255, 0.5);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: wait;
+      }
+      #status {
+        margin-left: auto;
+        font-size: 12px;
+        opacity: 0.8;
+      }
+      input[type="file"] {
+        display: none;
+      }
+      select,
+      input[type="text"],
+      textarea {
+        background: rgba(0, 0, 0, 0.6);
+        color: #d7f4ff;
+        border: 1px solid rgba(110, 200, 255, 0.25);
+        border-radius: 4px;
+        font-size: 11px;
+        padding: 6px 8px;
+      }
+      select {
+        text-transform: none;
+        letter-spacing: 0;
+        min-width: 7.5rem;
+      }
+      #voicePreviewText {
+        width: min(280px, 100%);
+      }
+      textarea {
+        width: min(420px, 100%);
+        height: 54px;
+      }
+      .voice-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        padding-top: 4px;
+        border-top: 1px solid rgba(110, 200, 255, 0.15);
+      }
+      .voice-row label {
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="panel">
+      <button data-state="dormant">dormant</button>
+      <button data-state="materializing">materializing</button>
+      <button data-state="idle">idle</button>
+      <button data-state="listening">listening</button>
+      <button data-state="thinking">thinking</button>
+      <button data-state="speaking">speaking</button>
+      <button data-state="error">error</button>
+      <button data-state="dematerializing">dematerializing</button>
+      <label class="file">Test audio<input id="audioFile" type="file" accept="audio/*" /></label>
+      <button id="stopAudio">Stop audio</button>
+      <textarea id="cues" placeholder='Optional Rhubarb JSON: [{"start":0,"end":0.2,"value":"X"}, ...]'></textarea>
+      <div class="voice-row">
+        <label for="voiceSelect">Realtime voice</label>
+        <select id="voiceSelect" aria-label="Realtime voice"></select>
+        <input
+          id="voicePreviewText"
+          type="text"
+          maxlength="500"
+          aria-label="Voice preview text"
+          placeholder="Sample line to speak…"
+        />
+        <button id="previewVoice" type="button">Preview voice</button>
+        <div id="status">booting…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/dev.ts"></script>
+  </body>
+</html>

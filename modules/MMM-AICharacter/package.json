@@ -1,0 +1,19 @@
+{
+	"name": "mmm-aicharacter",
+	"version": "1.0.0",
+	"description": "Hands-free pixelated AI character companion for MagicMirror²",
+	"license": "MIT",
+	"keywords": [
+		"magicmirror",
+		"smart-mirror",
+		"ai",
+		"voice"
+	],
+	"dependencies": {
+		"@ai-sdk/openai": "^4.0.19",
+		"ai": "^7.0.36"
+	},
+	"engines": {
+		"node": ">=22.21.1"
+	}
+}

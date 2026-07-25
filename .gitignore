@@ -56,11 +56,16 @@ Temporary Items
 
 # Ignore all modules
 /modules/*
+!/modules/MMM-AICharacter/
+!/modules/MMM-AICharacter/**
+/modules/MMM-AICharacter/node_modules/
+/modules/MMM-AICharacter/avatar/node_modules/
 
-# Ignore users config file but keep the samples.
-config
-!config/config.js.sample
-!config/custom.css.sample
+# Ignore local config secrets/overrides, but track the fork's shared config.
+/config/*
+!/config/config.js
+!/config/config.js.sample
+!/config/custom.css.sample
 
 # Vim
 ## swap
