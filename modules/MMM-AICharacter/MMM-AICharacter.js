@@ -2,7 +2,7 @@
 
 Module.register("MMM-AICharacter", {
 	defaults: {
-		wakeWord: "alexa",
+		wakeWord: "pixel",
 		wakeAliases: [],
 		realtimeModel: "gpt-realtime",
 		voice: "sage",

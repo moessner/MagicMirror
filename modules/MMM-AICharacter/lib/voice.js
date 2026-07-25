@@ -209,9 +209,9 @@
 
 			if (mode === "wake") {
 				const openMic = Date.now() < armedUntil;
-				const wake = matchWakeWord(cleaned, config.wakeWord || "alexa");
+				const wake = matchWakeWord(cleaned, config.wakeWord || "pixel");
 				if (!openMic && !wake.matched) {
-					config.onPartial(`Say "${config.wakeWord || "alexa"}"`, "wake");
+					config.onPartial(`Say "${config.wakeWord || "pixel"}"`, "wake");
 					return;
 				}
 				setMode("listening");
@@ -318,7 +318,7 @@
 			setMode("wake");
 			try {
 				await startMic();
-				config.onPartial(`Say "${config.wakeWord || "alexa"}"`, "wake");
+				config.onPartial(`Say "${config.wakeWord || "pixel"}"`, "wake");
 			} catch (error) {
 				active = false;
 				if (error && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {

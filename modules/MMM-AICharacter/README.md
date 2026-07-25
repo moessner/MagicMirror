@@ -2,7 +2,7 @@
 
 Hands-free holographic AI companion for [MagicMirror²](https://magicmirror.builders).
 
-Speak a configurable wake word (default **alexa**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
+Speak a configurable wake word (default **pixel**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
 
 The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar/) — see [`avatar/LAYER_PLAN.md`](./avatar/LAYER_PLAN.md) and [`avatar/README.md`](./avatar/README.md).
 
@@ -50,7 +50,7 @@ Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`conf
   module: "MMM-AICharacter",
   position: "middle_center",
   config: {
-    wakeWord: "alexa",
+    wakeWord: "pixel",
     wakeAliases: ["hey pixel"],
     realtimeModel: "gpt-realtime",
     voice: "sage",
@@ -85,7 +85,7 @@ Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`conf
 
 | Option | Default | Notes |
 |--------|---------|--------|
-| `wakeWord` | `"alexa"` | Any phrase; empty string disables wake gating (always live) |
+| `wakeWord` | `"pixel"` | Any phrase; empty string disables wake gating (always live) |
 | `wakeAliases` | `[]` | Extra accepted phrases; built-in fuzzy aliases also cover common STT mishears |
 | `realtimeModel` | `"gpt-realtime"` | OpenAI Realtime speech-to-speech model |
 | `voice` | `"sage"` | Realtime output voice (`sage`, `marin`, `cedar`, etc.) |
@@ -134,7 +134,7 @@ npm run server
 ## Hands-free flow
 
 1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake). The hologram stays hidden.
-2. Say the wake word (default `alexa`, configurable via `wakeWord`) — the character materializes.
+2. Say the wake word (default `pixel`, configurable via `wakeWord`) — the character materializes.
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
 5. Ask about the weather — Pixel calls the `get_weather` tool (Open-Meteo), shows a compact weather card, and speaks a short summary.

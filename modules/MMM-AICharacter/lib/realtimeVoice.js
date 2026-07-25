@@ -44,6 +44,21 @@
 
 	function defaultWakeAliases (wakeWord) {
 		const w = normalize(wakeWord);
+		if (w === "pixel" || w === "hey pixel") {
+			return [
+				"pixel",
+				"pixels",
+				"pixle",
+				"pixell",
+				"pix el",
+				"pick sell",
+				"pick cell",
+				"pixel pixel",
+				"hey pixel",
+				"ok pixel",
+				"hi pixel"
+			];
+		}
 		if (w === "alexa") {
 			return [
 				"alexa",
