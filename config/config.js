@@ -55,8 +55,8 @@ let config = {
 			module: "MMM-AICharacter",
 			position: "middle_center",
 			config: {
-				wakeWord: "pixel",
-				wakeAliases: ["hey pixel"],
+				wakeWord: "Spiegel",
+				wakeAliases: ["hey spiegel", "hallo spiegel"],
 				voiceLang: "de-DE",
 				characterName: "Pixel",
 				systemPrompt:

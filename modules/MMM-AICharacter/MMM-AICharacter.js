@@ -2,7 +2,7 @@
 
 Module.register("MMM-AICharacter", {
 	defaults: {
-		wakeWord: "pixel",
+		wakeWord: "Spiegel",
 		wakeAliases: [],
 		realtimeModel: "gpt-realtime",
 		voice: "sage",
@@ -106,7 +106,7 @@ Module.register("MMM-AICharacter", {
 		const statusEl = document.createElement("div");
 		statusEl.className = "mmm-ai-character__status";
 		statusEl.textContent = this.config.wakeWord
-			? `Say "${this.config.wakeWord}"`
+			? `Sag "${this.config.wakeWord}"`
 			: "Connecting live voice…";
 
 		const userEl = document.createElement("div");

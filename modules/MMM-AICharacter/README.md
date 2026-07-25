@@ -2,7 +2,7 @@
 
 Hands-free holographic AI companion for [MagicMirror²](https://magicmirror.builders).
 
-Speak a configurable wake word (default **pixel**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
+Speak a configurable wake word (default **Spiegel**), ask a question, and the avatar answers aloud with low-latency **OpenAI Realtime** speech-to-speech (ChatGPT Live–style). No buttons — designed for a mirror kiosk.
 
 The full-screen WebGL avatar (PixiJS + TypeScript) lives in [`avatar/`](./avatar/) — see [`avatar/LAYER_PLAN.md`](./avatar/LAYER_PLAN.md) and [`avatar/README.md`](./avatar/README.md).
 
@@ -46,12 +46,12 @@ Open http://localhost:5173 for state buttons and test-audio lip sync.
 Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`config/config.js`](../../config/config.js):
 
 ```javascript
-{
+const moduleConfig = {
   module: "MMM-AICharacter",
   position: "middle_center",
   config: {
-    wakeWord: "pixel",
-    wakeAliases: ["hey pixel"],
+    wakeWord: "Spiegel",
+    wakeAliases: ["hey spiegel", "hallo spiegel"],
     realtimeModel: "gpt-realtime",
     voice: "sage",
     transcriptionModel: "gpt-4o-mini-transcribe",
@@ -70,50 +70,46 @@ Minimal mirror layout (clock + Tagesschau newsfeed + this module) — see [`conf
     showNewsCard: true,
     showCalendarCard: true,
     newsLimit: 5,
-    newsFeeds: [
-      { title: "Tagesschau", url: "https://www.tagesschau.de/xml/rss2/" }
-    ],
-    calendars: [
-      { name: "Google", url: "${SECRET_GCAL_ICS_URL}" }
-    ],
+    newsFeeds: [{ title: "Tagesschau", url: "https://www.tagesschau.de/xml/rss2/" }],
+    calendars: [{ name: "Google", url: "${SECRET_GCAL_ICS_URL}" }],
     calendarMaximumEntries: 8,
     calendarMaximumNumberOfDays: 365,
     avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
   }
-}
+};
 ```
 
-| Option | Default | Notes |
-|--------|---------|--------|
-| `wakeWord` | `"pixel"` | Any phrase; empty string disables wake gating (always live) |
-| `wakeAliases` | `[]` | Extra accepted phrases; built-in fuzzy aliases also cover common STT mishears |
-| `realtimeModel` | `"gpt-realtime"` | OpenAI Realtime speech-to-speech model |
-| `voice` | `"sage"` | Realtime output voice (`sage`, `marin`, `cedar`, etc.) |
-| `transcriptionModel` | `"gpt-4o-mini-transcribe"` | Used for wake-word STT + Realtime input captions |
-| `postSpeakListenMs` | `8000` | Follow-up window without repeating the wake word |
-| `wakeSilenceMs` | `550` | End-of-clip silence for wake-word detection only |
-| `vadThreshold` | `0.015` | Local mic loudness gate for starting a wake clip |
-| `appearOnWake` | `true` | Materialize on wake, dematerialize when the follow-up window ends |
-| `lat` / `lon` | `null` | Fallback coordinates when geolocation is denied or unavailable |
-| `units` | `"metric"` | `"metric"` (°C, km/h) or `"imperial"` (°F, mph) |
-| `showWeatherCard` | `true` | Show a compact weather card under captions while Pixel answers |
-| `showNewsCard` | `true` | Show a compact Schlagzeilen card under captions while Pixel answers |
-| `showCalendarCard` | `true` | Show a compact Termine card under captions while Pixel answers |
-| `newsLimit` | `5` | Max headlines shown / returned to the model |
-| `newsFeeds` | Tagesschau RSS | Array of `{ title, url }` RSS/Atom feeds (no API key) |
-| `calendars` | `[]` | Array of `{ name, url }` ICS feeds (Google secret iCal URL) |
-| `calendarMaximumEntries` | `8` | Max events returned to the model / card |
-| `calendarMaximumNumberOfDays` | `365` | How far ahead to look for events |
+| Option                        | Default                    | Notes                                                                         |
+| ----------------------------- | -------------------------- | ----------------------------------------------------------------------------- |
+| `wakeWord`                    | `"Spiegel"`                | Any phrase; empty string disables wake gating (always live)                   |
+| `wakeAliases`                 | `[]`                       | Extra accepted phrases; built-in fuzzy aliases also cover common STT mishears |
+| `realtimeModel`               | `"gpt-realtime"`           | OpenAI Realtime speech-to-speech model                                        |
+| `voice`                       | `"sage"`                   | Realtime output voice (`sage`, `marin`, `cedar`, etc.)                        |
+| `transcriptionModel`          | `"gpt-4o-mini-transcribe"` | Used for wake-word STT + Realtime input captions                              |
+| `postSpeakListenMs`           | `8000`                     | Follow-up window without repeating the wake word                              |
+| `wakeSilenceMs`               | `550`                      | End-of-clip silence for wake-word detection only                              |
+| `vadThreshold`                | `0.015`                    | Local mic loudness gate for starting a wake clip                              |
+| `appearOnWake`                | `true`                     | Materialize on wake, dematerialize when the follow-up window ends             |
+| `lat` / `lon`                 | `null`                     | Fallback coordinates when geolocation is denied or unavailable                |
+| `units`                       | `"metric"`                 | `"metric"` (°C, km/h) or `"imperial"` (°F, mph)                               |
+| `showWeatherCard`             | `true`                     | Show a compact weather card under captions while Pixel answers                |
+| `showNewsCard`                | `true`                     | Show a compact Schlagzeilen card under captions while Pixel answers           |
+| `showCalendarCard`            | `true`                     | Show a compact Termine card under captions while Pixel answers                |
+| `newsLimit`                   | `5`                        | Max headlines shown / returned to the model                                   |
+| `newsFeeds`                   | Tagesschau RSS             | Array of `{ title, url }` RSS/Atom feeds (no API key)                         |
+| `calendars`                   | `[]`                       | Array of `{ name, url }` ICS feeds (Google secret iCal URL)                   |
+| `calendarMaximumEntries`      | `8`                        | Max events returned to the model / card                                       |
+| `calendarMaximumNumberOfDays` | `365`                      | How far ahead to look for events                                              |
 
 ## Secrets & Cursor Cloud
 
 This fork **tracks** [`config/config.js`](../../config/config.js) in git (placeholders only). Secrets stay in Cursor:
 
-| Piece | Where | Notes |
-|-------|--------|--------|
-| Modules / layout | `config/config.js` (git) | Same file on every clone and Cursor agent |
-| API key / private ICS URL | Cursor environment **Secrets** | `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` → `${SECRET_GCAL_ICS_URL}` in config |
-| Optional local overrides | `config/config.env` (gitignored) | Same var names; process env wins over `config.env` |
+| Piece                     | Where                            | Notes                                                                        |
+| ------------------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| Modules / layout          | `config/config.js` (git)         | Same file on every clone and Cursor agent                                    |
+| API key / private ICS URL | Cursor environment **Secrets**   | `OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` → `${SECRET_GCAL_ICS_URL}` in config |
+| Optional local overrides  | `config/config.env` (gitignored) | Same var names; process env wins over `config.env`                           |
 
 1. Edit `config/config.js` when you want the shared fork layout to change (then commit).
 2. In the [Cursor Cloud environment](https://cursor.com/dashboard?tab=cloud-agents) → **Secrets**, add `OPENAI_API_KEY` and `SECRET_GCAL_ICS_URL`.
@@ -134,7 +130,7 @@ npm run server
 ## Hands-free flow
 
 1. Module opens a Realtime WebRTC session (mic muted to OpenAI until wake). The hologram stays hidden.
-2. Say the wake word (default `pixel`, configurable via `wakeWord`) — the character materializes.
+2. Say the wake word (default `Spiegel`, configurable via `wakeWord`) — the character materializes.
 3. Speak naturally; server VAD ends your turn and the model answers with live audio.
 4. Captions stream while the avatar lip-syncs to the remote voice.
 5. Ask about the weather — Pixel calls the `get_weather` tool (Open-Meteo), shows a compact weather card, and speaks a short summary.

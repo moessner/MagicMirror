@@ -44,6 +44,23 @@
 
 	function defaultWakeAliases (wakeWord) {
 		const w = normalize(wakeWord);
+		if (w === "spiegel" || w === "hey spiegel" || w === "hallo spiegel") {
+			return [
+				"spiegel",
+				"spigel",
+				"speigel",
+				"spielgel",
+				"speegel",
+				"spi gel",
+				"spy gel",
+				"spiegel spiegel",
+				"hey spiegel",
+				"hallo spiegel",
+				"ok spiegel",
+				"hi spiegel",
+				"mirror"
+			];
+		}
 		if (w === "pixel" || w === "hey pixel") {
 			return [
 				"pixel",
@@ -334,7 +351,7 @@
 			armedUntil = 0;
 			setMode("wake");
 			if (wakeEnabled()) {
-				setStatus(`Say "${config.wakeWord}"`);
+				setStatus(`Sag "${config.wakeWord}"`);
 			} else {
 				setStatus("Listening…");
 			}
@@ -448,9 +465,9 @@
 			const wake = matchWakeWord(payload.text || "", config.wakeWord || "", config.wakeAliases);
 			if (!wake.matched) {
 				if (wake.heard) {
-					setStatus(`Heard "${wake.heard}" — say "${config.wakeWord}"`);
+					setStatus(`Gehört "${wake.heard}" — sag "${config.wakeWord}"`);
 				} else {
-					setStatus(`Say "${config.wakeWord}"`);
+					setStatus(`Sag "${config.wakeWord}"`);
 				}
 				return;
 			}
@@ -858,7 +875,7 @@
 				const token = await requestToken();
 				if (!token?.value) throw new Error("No ephemeral Realtime key returned.");
 				await connectPeer(token.value);
-				setStatus(wakeEnabled() ? `Say "${config.wakeWord}"` : "Listening…");
+				setStatus(wakeEnabled() ? `Sag "${config.wakeWord}"` : "Listening…");
 			} catch (error) {
 				config.onError(error.message || "Could not connect Realtime voice.");
 			} finally {
