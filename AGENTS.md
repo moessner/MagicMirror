@@ -17,9 +17,26 @@ startup update script pick this up automatically. If you ever land on `v22.14.0`
 
 ### Config
 
-Runtime config lives in `config/config.js` (gitignored). Create it once from the sample:
-`cp config/config.js.sample config/config.js`. To reach the server from the VM browser, set
-`address: "0.0.0.0"` and `ipWhitelist: []` in that file. Validate with `node --run config:check`.
+**Tracked in git:** [`config/config.js`](config/config.js) — clock, Tagesschau newsfeed,
+MMM-AICharacter, `${SECRET_GCAL_ICS_URL}` placeholders. Every clone / Cursor agent
+gets the same layout; edit this file when you want the fork-wide default to change.
+
+**Secrets (Cursor dashboard, not git):** add Runtime Secrets on the
+[Cloud Agents environment](https://cursor.com/dashboard/cloud-agents):
+`OPENAI_API_KEY`, `SECRET_GCAL_ICS_URL` (Google private iCal URL). MagicMirror
+substitutes `${…}` at load time; with `hideConfigSecrets: true` they stay off
+the browser wire. Optional local overrides: `config/config.env` (still gitignored).
+
+Validate with `node --run config:check`.
+
+MMM-AICharacter deps are **not** covered by the root `npm install`. After clone:
+
+```sh
+cd modules/MMM-AICharacter && npm install --omit=dev
+cd avatar && npm install && npm run build
+```
+
+Without that, the node helper fails with `Cannot find package 'ai'`.
 
 ### Running the app
 

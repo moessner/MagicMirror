@@ -10,7 +10,7 @@ Module.register("MMM-AICharacter", {
 		voiceLang: "en-US",
 		characterName: "Pixel",
 		systemPrompt:
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers. Call get_weather again on every weather question, even if you already answered weather earlier in the session. When asked about news, headlines, current events, or Schlagzeilen, always call get_news first, then summarize briefly from the tool result — never invent headlines. Call get_news again on every news question, even if you already answered news earlier in the session.",
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). Be warm, slightly playful, and helpful. Avoid markdown, lists, and stage directions. When asked about weather, temperature, or the forecast, always call get_weather first, then summarize briefly from the tool result — never invent numbers. Call get_weather again on every weather question, even if you already answered weather earlier in the session. When asked about news, headlines, current events, or Schlagzeilen, always call get_news first, then summarize briefly from the tool result — never invent headlines. Call get_news again on every news question, even if you already answered news earlier in the session. When asked about the calendar, schedule, appointments, upcoming events, or Termine, always call get_calendar first, then summarize briefly from the tool result — never invent events. Call get_calendar again on every calendar question, even if you already answered calendar earlier in the session.",
 		postSpeakListenMs: 8000,
 		wakeSilenceMs: 550,
 		vadThreshold: 0.015,
@@ -22,6 +22,7 @@ Module.register("MMM-AICharacter", {
 		units: "metric",
 		showWeatherCard: true,
 		showNewsCard: true,
+		showCalendarCard: true,
 		newsLimit: 5,
 		newsFeeds: [
 			{
@@ -29,6 +30,10 @@ Module.register("MMM-AICharacter", {
 				url: "https://www.tagesschau.de/xml/rss2/"
 			}
 		],
+		/** Google Calendar private ICS URLs (or other iCal feeds). Prefer ${SECRET_GCAL_ICS_URL}. */
+		calendars: [],
+		calendarMaximumEntries: 8,
+		calendarMaximumNumberOfDays: 365,
 		avatarPath: "/MMM-AICharacter/avatar-app/embed.html"
 	},
 
@@ -64,8 +69,10 @@ Module.register("MMM-AICharacter", {
 		this.pendingTokenRequestId = null;
 		this.weatherEl = null;
 		this.newsEl = null;
+		this.calendarEl = null;
 		this.pendingWeather = new Map();
 		this.pendingNews = new Map();
+		this.pendingCalendar = new Map();
 		this.cachedGeo = null;
 	},
 
@@ -118,11 +125,17 @@ Module.register("MMM-AICharacter", {
 		newsEl.hidden = true;
 		this.newsEl = newsEl;
 
+		const calendarEl = document.createElement("div");
+		calendarEl.className = "mmm-ai-character__calendar";
+		calendarEl.hidden = true;
+		this.calendarEl = calendarEl;
+
 		captions.appendChild(statusEl);
 		captions.appendChild(userEl);
 		captions.appendChild(assistantEl);
 		captions.appendChild(weatherEl);
 		captions.appendChild(newsEl);
+		captions.appendChild(calendarEl);
 
 		root.appendChild(stage);
 		root.appendChild(captions);
@@ -194,7 +207,10 @@ Module.register("MMM-AICharacter", {
 			wakeWord: this.config.wakeWord,
 			units: this.config.units,
 			newsFeeds: this.config.newsFeeds,
-			newsLimit: this.config.newsLimit
+			newsLimit: this.config.newsLimit,
+			calendars: this.config.calendars,
+			calendarMaximumEntries: this.config.calendarMaximumEntries,
+			calendarMaximumNumberOfDays: this.config.calendarMaximumNumberOfDays
 		});
 
 		return root;
@@ -270,6 +286,7 @@ Module.register("MMM-AICharacter", {
 			if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--present");
 			this.clearWeatherCard();
 			this.clearNewsCard();
+			this.clearCalendarCard();
 			return;
 		}
 		// Keep --present until the fade finishes so the stage doesn't collapse mid-animation.
@@ -287,6 +304,7 @@ Module.register("MMM-AICharacter", {
 			}
 			this.clearWeatherCard();
 			this.clearNewsCard();
+			this.clearCalendarCard();
 		}, 1300);
 	},
 
@@ -306,6 +324,15 @@ Module.register("MMM-AICharacter", {
 		newsEl.setAttribute("hidden", "hidden");
 		newsEl.innerHTML = "";
 		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--news");
+	},
+
+	clearCalendarCard () {
+		const calendarEl = this.ensureCalendarElement();
+		if (!calendarEl) return;
+		calendarEl.hidden = true;
+		calendarEl.setAttribute("hidden", "hidden");
+		calendarEl.innerHTML = "";
+		if (this.wrapper) this.wrapper.classList.remove("mmm-ai-character--calendar");
 	},
 
 	escapeHtml (value) {
@@ -340,6 +367,7 @@ Module.register("MMM-AICharacter", {
 		if (!this.config.showWeatherCard || !weatherEl || !data || data.error) return;
 
 		this.clearNewsCard();
+		this.clearCalendarCard();
 
 		// A pending dematerialize would clear the card right after a follow-up ask.
 		if (this.vanishTimer) {
@@ -410,6 +438,7 @@ Module.register("MMM-AICharacter", {
 		if (!this.config.showNewsCard || !newsEl || !data || data.error) return;
 
 		this.clearWeatherCard();
+		this.clearCalendarCard();
 
 		// A pending dematerialize would clear the card right after a follow-up ask.
 		if (this.vanishTimer) {
@@ -442,6 +471,55 @@ Module.register("MMM-AICharacter", {
 		newsEl.removeAttribute("hidden");
 		if (this.wrapper) {
 			this.wrapper.classList.add("mmm-ai-character--news");
+			if (this.avatarVisible || !this.wakeGatedAppearance()) {
+				this.wrapper.classList.add("mmm-ai-character--present");
+			}
+		}
+	},
+
+	ensureCalendarElement () {
+		if (this.calendarEl && this.wrapper && this.wrapper.contains(this.calendarEl)) {
+			return this.calendarEl;
+		}
+		if (this.wrapper) {
+			this.calendarEl = this.wrapper.querySelector(".mmm-ai-character__calendar");
+		}
+		return this.calendarEl;
+	},
+
+	showCalendarCard (data) {
+		const calendarEl = this.ensureCalendarElement();
+		if (!this.config.showCalendarCard || !calendarEl || !data || data.error) return;
+
+		this.clearWeatherCard();
+		this.clearNewsCard();
+
+		if (this.vanishTimer) {
+			this.clearAppearVanishTimers();
+			this.avatarVisible = true;
+			if (this.wrapper) this.wrapper.classList.add("mmm-ai-character--present");
+		}
+
+		const events = Array.isArray(data.events) ? data.events : [];
+		const items = events
+			.map((item) => {
+				const when = this.escapeHtml(item.when || "");
+				const title = this.escapeHtml(item.title || "");
+				return `<div class="mmm-ai-character__calendar-item">
+					<span class="mmm-ai-character__calendar-when">${when}</span>
+					<span class="mmm-ai-character__calendar-title">${title}</span>
+				</div>`;
+			})
+			.join("");
+
+		calendarEl.innerHTML = `
+			<div class="mmm-ai-character__calendar-heading">Termine</div>
+			<div class="mmm-ai-character__calendar-list">${items}</div>
+		`;
+		calendarEl.hidden = false;
+		calendarEl.removeAttribute("hidden");
+		if (this.wrapper) {
+			this.wrapper.classList.add("mmm-ai-character--calendar");
 			if (this.avatarVisible || !this.wakeGatedAppearance()) {
 				this.wrapper.classList.add("mmm-ai-character--present");
 			}
@@ -491,6 +569,11 @@ Module.register("MMM-AICharacter", {
 
 		if (call.name === "get_news") {
 			await this.handleNewsFunctionCall(call);
+			return;
+		}
+
+		if (call.name === "get_calendar") {
+			await this.handleCalendarFunctionCall(call);
 			return;
 		}
 
@@ -570,6 +653,35 @@ Module.register("MMM-AICharacter", {
 		}
 	},
 
+	async handleCalendarFunctionCall (call) {
+		if (this.wakeGatedAppearance()) {
+			this.materializeAvatar("thinking");
+		}
+
+		const requestId = `cal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+		this.pendingCalendar.set(requestId, call.callId);
+
+		try {
+			this.sendSocketNotification("AI_CALENDAR_FETCH", {
+				instanceId: this.identifier,
+				requestId,
+				callId: call.callId,
+				calendars: this.config.calendars,
+				maximumEntries: this.config.calendarMaximumEntries,
+				maximumNumberOfDays: this.config.calendarMaximumNumberOfDays,
+				locale: this.config.voiceLang || "en-US"
+			});
+		} catch (error) {
+			this.pendingCalendar.delete(requestId);
+			if (this.voice) {
+				this.voice.sendFunctionOutput(call.callId, {
+					error: true,
+					message: error.message || "Calendar lookup failed"
+				});
+			}
+		}
+	},
+
 	suspend () {
 		if (this.voice) this.voice.stop();
 		this.attachAvatarStream(null);
@@ -592,9 +704,12 @@ Module.register("MMM-AICharacter", {
 			const present = this.avatarVisible || !this.wakeGatedAppearance();
 			const weatherOpen = Boolean(this.weatherEl && !this.weatherEl.hidden);
 			const newsOpen = Boolean(this.newsEl && !this.newsEl.hidden);
+			const calendarOpen = Boolean(this.calendarEl && !this.calendarEl.hidden);
 			this.wrapper.className = `mmm-ai-character mmm-ai-character--${shellState}${
 				present ? " mmm-ai-character--present" : ""
-			}${weatherOpen ? " mmm-ai-character--weather" : ""}${newsOpen ? " mmm-ai-character--news" : ""}`;
+			}${weatherOpen ? " mmm-ai-character--weather" : ""}${newsOpen ? " mmm-ai-character--news" : ""}${
+				calendarOpen ? " mmm-ai-character--calendar" : ""
+			}`;
 		}
 
 		const gated = this.wakeGatedAppearance();
@@ -696,6 +811,27 @@ Module.register("MMM-AICharacter", {
 			}
 
 			this.showNewsCard(payload);
+			if (this.voice && callId) {
+				this.voice.sendFunctionOutput(callId, payload.summary || payload);
+			}
+			return;
+		}
+
+		if (notification === "AI_CALENDAR_RESULT") {
+			const callId = payload.callId || this.pendingCalendar.get(payload.requestId);
+			if (payload.requestId) this.pendingCalendar.delete(payload.requestId);
+
+			if (payload.error) {
+				if (this.voice && callId) {
+					this.voice.sendFunctionOutput(callId, {
+						error: true,
+						message: payload.message || "Calendar fetch failed"
+					});
+				}
+				return;
+			}
+
+			this.showCalendarCard(payload);
 			if (this.voice && callId) {
 				this.voice.sendFunctionOutput(callId, payload.summary || payload);
 			}

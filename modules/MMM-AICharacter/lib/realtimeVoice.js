@@ -625,7 +625,7 @@
 						type: "realtime",
 						instructions:
 							config.systemPrompt ||
-							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers. When asked about news, headlines, current events, or Schlagzeilen, call get_news, then summarize briefly from the tool result — never invent headlines.",
+							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers. When asked about news, headlines, current events, or Schlagzeilen, call get_news, then summarize briefly from the tool result — never invent headlines. When asked about the calendar, schedule, appointments, or Termine, call get_calendar, then summarize briefly from the tool result — never invent events.",
 						tools: [
 							{
 								type: "function",
@@ -658,6 +658,18 @@
 												"Optional topic or keyword to filter headlines (e.g. politics, sport, Klima)."
 										}
 									},
+									required: [],
+									additionalProperties: false
+								}
+							},
+							{
+								type: "function",
+								name: "get_calendar",
+								description:
+									"Fetch upcoming calendar events (Termine). Call this whenever the user asks about their schedule, calendar, appointments, Termine, or what is coming up.",
+								parameters: {
+									type: "object",
+									properties: {},
 									required: [],
 									additionalProperties: false
 								}
