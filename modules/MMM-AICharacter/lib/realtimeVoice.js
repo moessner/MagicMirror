@@ -190,11 +190,35 @@
 		return "";
 	}
 
+	const SPEAK_LANGUAGE_NAMES = {
+		de: "German (Deutsch)",
+		en: "English",
+		es: "Spanish (Español)",
+		fr: "French (Français)",
+		it: "Italian (Italiano)",
+		nl: "Dutch (Nederlands)",
+		pt: "Portuguese (Português)"
+	};
+
+	function speakLanguageInstruction (voiceLang) {
+		const code = String(voiceLang || "en").slice(0, 2).toLowerCase();
+		const name = SPEAK_LANGUAGE_NAMES[code] || code;
+		return `Always speak and reply in ${name}. Keep that language even if the transcript is noisy, the wake word is English, or a word sounds like another language. Never switch to Spanish or any other language unless the user explicitly asks to change language.`;
+	}
+
+	function buildRealtimeInstructions (systemPrompt, voiceLang) {
+		const base =
+			systemPrompt ||
+			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers. When asked about news, headlines, current events, or Schlagzeilen, call get_news, then summarize briefly from the tool result — never invent headlines. When asked about the calendar, schedule, appointments, or Termine, call get_calendar, then summarize briefly from the tool result — never invent events.";
+		return `${base}\n\n${speakLanguageInstruction(voiceLang)}`;
+	}
+
 	/**
 	 * @param {object} config
 	 * @param {string} config.wakeWord
 	 * @param {string[]} [config.wakeAliases]
 	 * @param {string} config.systemPrompt
+	 * @param {string} [config.voiceLang]
 	 * @param {number} config.postSpeakListenMs
 	 * @param {number} [config.wakeSilenceMs]
 	 * @param {number} [config.vadThreshold]
@@ -634,13 +658,12 @@
 
 			dataChannel = peer.createDataChannel("oai-events");
 			dataChannel.addEventListener("open", () => {
+				const transcriptionLanguage = String(config.voiceLang || "en").slice(0, 2).toLowerCase();
 				sendEvent({
 					type: "session.update",
 					session: {
 						type: "realtime",
-						instructions:
-							config.systemPrompt ||
-							"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather, then summarize briefly from the tool result — never invent numbers. When asked about news, headlines, current events, or Schlagzeilen, call get_news, then summarize briefly from the tool result — never invent headlines. When asked about the calendar, schedule, appointments, or Termine, call get_calendar, then summarize briefly from the tool result — never invent events.",
+						instructions: buildRealtimeInstructions(config.systemPrompt, config.voiceLang),
 						tools: [
 							{
 								type: "function",
@@ -694,7 +717,8 @@
 						audio: {
 							input: {
 								transcription: {
-									model: "gpt-4o-mini-transcribe"
+									model: "gpt-4o-mini-transcribe",
+									language: transcriptionLanguage
 								},
 								turn_detection: {
 									type: "server_vad",

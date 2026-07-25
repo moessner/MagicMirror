@@ -8,6 +8,40 @@ const DEFAULT_REALTIME_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "sage";
 const DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
 
+const SPEAK_LANGUAGE_NAMES = {
+	de: "German (Deutsch)",
+	en: "English",
+	es: "Spanish (Español)",
+	fr: "French (Français)",
+	it: "Italian (Italiano)",
+	nl: "Dutch (Nederlands)",
+	pt: "Portuguese (Português)"
+};
+
+/**
+ * Realtime speech-to-speech mirrors detected input language unless instructions
+ * lock the reply language. voiceLang alone only hints STT.
+ * @param {string} [voiceLang]
+ * @returns {string}
+ */
+function speakLanguageInstruction (voiceLang) {
+	const code = String(voiceLang || "en").slice(0, 2).toLowerCase();
+	const name = SPEAK_LANGUAGE_NAMES[code] || code;
+	return `Always speak and reply in ${name}. Keep that language even if the transcript is noisy, the wake word is English, or a word sounds like another language. Never switch to Spanish or any other language unless the user explicitly asks to change language.`;
+}
+
+/**
+ * @param {string} [systemPrompt]
+ * @param {string} [voiceLang]
+ * @returns {string}
+ */
+function buildRealtimeInstructions (systemPrompt, voiceLang) {
+	const base =
+		systemPrompt ||
+		"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather. When asked about news, headlines, or Schlagzeilen, call get_news. When asked about the calendar, schedule, appointments, or Termine, call get_calendar.";
+	return `${base}\n\n${speakLanguageInstruction(voiceLang)}`;
+}
+
 const GET_WEATHER_TOOL = {
 	type: "function",
 	name: "get_weather",
@@ -176,9 +210,7 @@ module.exports = NodeHelper.create({
 		const voice = settings.voice || DEFAULT_VOICE;
 		const transcriptionModel = settings.transcriptionModel || DEFAULT_TRANSCRIPTION_MODEL;
 		const language = String(settings.voiceLang || "en").slice(0, 2);
-		const instructions =
-			settings.systemPrompt ||
-			"You are Pixel, a concise AI mirror companion. Speak in short, clear spoken answers (1-3 sentences). When asked about weather or the forecast, call get_weather. When asked about news, headlines, or Schlagzeilen, call get_news. When asked about the calendar, schedule, appointments, or Termine, call get_calendar.";
+		const instructions = buildRealtimeInstructions(settings.systemPrompt, settings.voiceLang);
 
 		const body = {
 			session: {
